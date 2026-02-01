@@ -243,7 +243,7 @@ const CategoryDistributionChart = forwardRef((props, ref) => {
         </div>
       </div>
 
-      <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isOpen ? 'max-h-[600px] opacity-100' : 'max-h-0 opacity-0'}`}>
+      <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isOpen ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'}`}>
         <div className="h-96 flex items-center justify-center transition-all duration-300 bg-gradient-to-br from-white via-slate-50/50 to-cyan-50/30 dark:from-slate-800 dark:via-slate-800/80 dark:to-teal-900/20 rounded-2xl border border-slate-200/80 dark:border-slate-700/60 shadow-inner p-6">
           {isLoading ? (
             <div className="w-full h-full relative overflow-hidden rounded-2xl">

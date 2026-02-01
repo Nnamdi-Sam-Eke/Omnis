@@ -55,12 +55,13 @@ useEffect(() => {
   if (!user) return;
 
   const fetchTotalSimulations = async () => {
-    const snapshot = await getDocs(query(
-      collection(db, 'userInteractions'),
-      where('userId', '==', user.uid),
-      where('action', '==', 'simulate_scenario')
-    ));
-    setTotalScenarios(snapshot.docs.length);
+   const snapshot = await getDocs(
+  collection(db, 'userInteractions', user.uid, 'interactions')
+);
+const simulationCount = snapshot.docs.filter(
+  doc => doc.data().response?.task === "AI Analysis"
+).length;
+    setTotalScenarios(simulationCount);
   };
 
   fetchTotalSimulations();
@@ -82,12 +83,10 @@ useEffect(() => {
     if (!user) return;
 
     const simulationQuery = query(
-      collection(db, 'userInteractions'),
-      where('userId', '==', user.uid),
-      where('action', '==', 'simulate_scenario'),
-      orderBy('timestamp', 'desc'),
-      ...(range !== 'all' && viewMode === 'individual' ? [limit(range)] : [])
-    );
+  collection(db, 'userInteractions', user.uid, 'interactions'),
+  where('response.task', '==', 'AI Analysis'),
+  orderBy('timestamp', 'desc')
+);
 
     const unsubscribe = onSnapshot(simulationQuery, (snapshot) => {
       const simulations = snapshot.docs
@@ -300,7 +299,7 @@ useEffect(() => {
           </div>
         </div>
 
-        <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isOpen ? 'flex-1 min-h-[400px] opacity-100' : 'max-h-0 opacity-0'}`}>
+        <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isOpen ? 'flex-1 min-h-[600px] opacity-100' : 'max-h-0 opacity-0'}`}>
           <div className="flex flex-wrap gap-3 mb-6">
             {["bar", "line", "pie"].map(type => {
               const Icon = chartIcons[type];

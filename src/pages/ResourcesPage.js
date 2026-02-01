@@ -1,5 +1,21 @@
 import React, { useState, useEffect, Suspense } from "react";
-import { ChevronRight, ChevronUp, BookOpen, Video, Wrench, HelpCircle, Download, ArrowRight, Sparkles, Zap } from "lucide-react";
+import { ChevronRight, ChevronUp, BookOpen, HelpCircle, Sparkles, Zap } from "lucide-react";
+
+// Placeholder component for non-essential tabs
+const ComingSoonPlaceholder = ({ featureName }) => {
+  return (
+    <div className="flex flex-col items-center justify-center p-16 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border border-purple-200/50 dark:border-purple-700/50 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300">
+      <Sparkles className="w-12 h-12 text-purple-600 dark:text-purple-400 mb-6" />
+      <h3 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">{featureName}</h3>
+      <p className="text-gray-600 dark:text-gray-300 text-center mb-4">
+        We're working hard to bring this feature to you soon! Stay tuned for updates and enhancements.
+      </p>
+      <span className="inline-block px-4 py-2 bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 font-medium rounded-full">
+        Coming Soon
+      </span>
+    </div>
+  );
+};
 
 const ResourcesPage = () => {
   const [activeTab, setActiveTab] = useState("documentation");
@@ -10,13 +26,13 @@ const ResourcesPage = () => {
       setActiveTab(tab);
     }
     if (e.key === "ArrowRight") {
-      const tabs = ["documentation", "tutorials", "tools", "FAQs", "downloads"];
+      const tabs = ["documentation", "FAQs"];
       const currentIndex = tabs.indexOf(activeTab);
       const nextIndex = (currentIndex + 1) % tabs.length;
       setActiveTab(tabs[nextIndex]);
     }
     if (e.key === "ArrowLeft") {
-      const tabs = ["documentation", "tutorials", "tools", "FAQs", "downloads"];
+      const tabs = ["documentation", "FAQs"];
       const currentIndex = tabs.indexOf(activeTab);
       const prevIndex = (currentIndex - 1 + tabs.length) % tabs.length;
       setActiveTab(tabs[prevIndex]);
@@ -26,18 +42,12 @@ const ResourcesPage = () => {
   // Tooltip text for each tab
   const tabTooltips = {
     documentation: "View guides, API docs, and manuals",
-    tutorials: "Learn how to use Omnis step-by-step",
-    tools: "Explore helpful resources and utilities",
     FAQs: "Find answers to common questions",
-    downloads: "Access templates, whitepapers, and software",
   };
 
   const tabIcons = {
     documentation: BookOpen,
-    tutorials: Video,
-    tools: Wrench,
     FAQs: HelpCircle,
-    downloads: Download,
   };
 
   const [loading, setLoading] = React.useState(true);
@@ -85,7 +95,7 @@ const ResourcesPage = () => {
         {/* Enhanced Tabs with purple theme */}
         <div role="tablist" aria-label="Resource Sections" className="mb-8">
           <div className="flex flex-wrap justify-center gap-3 md:gap-4">
-            {['documentation', 'tutorials', 'tools', 'FAQs', 'downloads'].map((tab, index) => {
+            {['documentation', 'FAQs'].map((tab, index) => {
               const Icon = tabIcons[tab];
               return (
                 <button
@@ -119,125 +129,7 @@ const ResourcesPage = () => {
           {activeTab === 'documentation' && (
             <Suspense fallback={<div className="text-center text-gray-500">Loading...</div>}>
               <div role="tabpanel" id="panel-documentation" aria-labelledby="tab-documentation" className="mx-auto md:w-10/12 lg:w-full">
-                <div className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm p-8 border border-purple-200/50 dark:border-purple-700/50 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300">
-                  <div className="flex items-center space-x-3 mb-6">
-                    <div className="p-3 bg-gradient-to-br from-purple-100 to-indigo-100 dark:from-purple-900/30 dark:to-indigo-900/30 rounded-xl">
-                      <BookOpen className="w-6 h-6 text-purple-600 dark:text-purple-400" />
-                    </div>
-                    <div>
-                      <h3 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 dark:from-purple-400 dark:to-indigo-400 bg-clip-text text-transparent">Documentation</h3>
-                      <p className="text-gray-600 dark:text-gray-400">Complete guides and references</p>
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    {[
-                      { title: "Getting Started", desc: "Start here to learn the basics", badge: "Popular" },
-                      { title: "API Reference", desc: "Explore detailed API references", badge: "Technical" },
-                      { title: "User Manual", desc: "User manuals for better understanding", badge: "Essential" }
-                    ].map((item, idx) => (
-                      <a
-                        key={idx}
-                        href="#"
-                        className="group flex items-center justify-between p-4 bg-gradient-to-r from-purple-50/50 to-indigo-50/50 dark:from-purple-900/10 dark:to-indigo-900/10 rounded-xl hover:from-purple-100 hover:to-indigo-100 dark:hover:from-purple-900/20 dark:hover:to-indigo-900/20 transition-all duration-200 border border-purple-200/30 dark:border-purple-700/30"
-                        title={item.desc}
-                      >
-                        <div className="flex items-center space-x-3">
-                          <span className="text-gray-900 dark:text-white font-medium group-hover:text-purple-600 dark:group-hover:text-purple-400">
-                            {item.title}
-                          </span>
-                          <span className="px-2 py-1 text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded-full">
-                            {item.badge}
-                          </span>
-                        </div>
-                        <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-purple-600 dark:group-hover:text-purple-400 transform group-hover:translate-x-1 transition-all" />
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </Suspense>
-          )}
-
-          {activeTab === 'tutorials' && (
-            <Suspense fallback={<div className="text-center text-gray-500">Loading...</div>}>
-              <div role="tabpanel" id="panel-tutorials" aria-labelledby="tab-tutorials" className="mx-auto md:w-10/12 lg:w-full">
-                <div className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm p-8 border border-purple-200/50 dark:border-purple-700/50 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300">
-                  <div className="flex items-center space-x-3 mb-6">
-                    <div className="p-3 bg-gradient-to-br from-indigo-100 to-blue-100 dark:from-indigo-900/30 dark:to-blue-900/30 rounded-xl">
-                      <Video className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
-                    </div>
-                    <div>
-                      <h3 className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-blue-600 dark:from-indigo-400 dark:to-blue-400 bg-clip-text text-transparent">Tutorials</h3>
-                      <p className="text-gray-600 dark:text-gray-400">Step-by-step learning paths</p>
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    {[
-                      { title: "Beginner's Guide", desc: "Beginner friendly tutorials", duration: "30 min" },
-                      { title: "Advanced Techniques", desc: "Advanced topics and best practices", duration: "45 min" },
-                      { title: "Video Walkthroughs", desc: "Interactive video tutorials", duration: "60 min" }
-                    ].map((item, idx) => (
-                      <a
-                        key={idx}
-                        href="#"
-                        className="group flex items-center justify-between p-4 bg-gradient-to-r from-indigo-50/50 to-blue-50/50 dark:from-indigo-900/10 dark:to-blue-900/10 rounded-xl hover:from-indigo-100 hover:to-blue-100 dark:hover:from-indigo-900/20 dark:hover:to-blue-900/20 transition-all duration-200 border border-indigo-200/30 dark:border-indigo-700/30"
-                        title={item.desc}
-                      >
-                        <div className="flex items-center space-x-3">
-                          <span className="text-gray-900 dark:text-white font-medium group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
-                            {item.title}
-                          </span>
-                          <span className="px-2 py-1 text-xs font-medium bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full">
-                            {item.duration}
-                          </span>
-                        </div>
-                        <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transform group-hover:translate-x-1 transition-all" />
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </Suspense>
-          )}
-
-          {activeTab === 'tools' && (
-            <Suspense fallback={<div className="text-center text-gray-500">Loading...</div>}>
-              <div role="tabpanel" id="panel-tools" aria-labelledby="tab-tools" className="mx-auto md:w-10/12 lg:w-full">
-                <div className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm p-8 border border-purple-200/50 dark:border-purple-700/50 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300">
-                  <div className="flex items-center space-x-3 mb-6">
-                    <div className="p-3 bg-gradient-to-br from-purple-100 to-pink-100 dark:from-purple-900/30 dark:to-pink-900/30 rounded-xl">
-                      <Wrench className="w-6 h-6 text-purple-600 dark:text-purple-400" />
-                    </div>
-                    <div>
-                      <h3 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 dark:from-purple-400 dark:to-pink-400 bg-clip-text text-transparent">Tools</h3>
-                      <p className="text-gray-600 dark:text-gray-400">Helpful utilities and resources</p>
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    {[
-                      { title: "Resource Builder", desc: "Build resources with ease", status: "New" },
-                      { title: "Analytics Tool", desc: "Analyze data and insights", status: "Beta" },
-                      { title: "AI Assistant", desc: "Get AI-powered help", status: "Featured" }
-                    ].map((item, idx) => (
-                      <a
-                        key={idx}
-                        href="#"
-                        className="group flex items-center justify-between p-4 bg-gradient-to-r from-purple-50/50 to-pink-50/50 dark:from-purple-900/10 dark:to-pink-900/10 rounded-xl hover:from-purple-100 hover:to-pink-100 dark:hover:from-purple-900/20 dark:hover:to-pink-900/20 transition-all duration-200 border border-purple-200/30 dark:border-purple-700/30"
-                        title={item.desc}
-                      >
-                        <div className="flex items-center space-x-3">
-                          <span className="text-gray-900 dark:text-white font-medium group-hover:text-purple-600 dark:group-hover:text-purple-400">
-                            {item.title}
-                          </span>
-                          <span className="px-2 py-1 text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded-full">
-                            {item.status}
-                          </span>
-                        </div>
-                        <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-purple-600 dark:group-hover:text-purple-400 transform group-hover:translate-x-1 transition-all" />
-                      </a>
-                    ))}
-                  </div>
-                </div>
+                <ComingSoonPlaceholder featureName="Documentation" />
               </div>
             </Suspense>
           )}
@@ -311,49 +203,6 @@ const ResourcesPage = () => {
                     )}
                   </div>
                 ))}
-              </div>
-            </Suspense>
-          )}
-
-          {activeTab === 'downloads' && (
-            <Suspense fallback={<div className="text-center text-gray-500">Loading...</div>}>
-              <div role="tabpanel" id="panel-downloads" aria-labelledby="tab-downloads" className="mx-auto md:w-10/12 lg:w-full">
-                <div className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm p-8 border border-purple-200/50 dark:border-purple-700/50 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300">
-                  <div className="flex items-center space-x-3 mb-6">
-                    <div className="p-3 bg-gradient-to-br from-indigo-100 to-purple-100 dark:from-indigo-900/30 dark:to-purple-900/30 rounded-xl">
-                      <Download className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
-                    </div>
-                    <div>
-                      <h3 className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-400 dark:to-purple-400 bg-clip-text text-transparent">Downloads</h3>
-                      <p className="text-gray-600 dark:text-gray-400">Resources and files to get started</p>
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    {[
-                      { title: "Download Templates", desc: "Download templates for your work", size: "2.5 MB" },
-                      { title: "Download Software", desc: "Get software tools and packages", size: "45 MB" },
-                      { title: "Download Whitepaper", desc: "Read our whitepaper document", size: "1.2 MB" },
-                      { title: "Download User Guide", desc: "Download the user guide for reference", size: "850 KB" }
-                    ].map((item, idx) => (
-                      <a
-                        key={idx}
-                        href="#"
-                        className="group flex items-center justify-between p-4 bg-gradient-to-r from-indigo-50/50 to-purple-50/50 dark:from-indigo-900/10 dark:to-purple-900/10 rounded-xl hover:from-indigo-100 hover:to-purple-100 dark:hover:from-indigo-900/20 dark:hover:to-purple-900/20 transition-all duration-200 border border-indigo-200/30 dark:border-indigo-700/30"
-                        title={item.desc}
-                      >
-                        <div className="flex items-center space-x-3">
-                          <span className="text-gray-900 dark:text-white font-medium group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
-                            {item.title}
-                          </span>
-                          <span className="px-2 py-1 text-xs font-medium bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full">
-                            {item.size}
-                          </span>
-                        </div>
-                        <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transform group-hover:translate-x-1 transition-all" />
-                      </a>
-                    ))}
-                  </div>
-                </div>
               </div>
             </Suspense>
           )}

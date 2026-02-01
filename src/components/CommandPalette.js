@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { 
   TrendingUp, 
-  BarChart2, 
-  Award, 
+  // Award, 
   LogOut, 
   Plus,
   Search,
@@ -12,8 +11,7 @@ import {
 // Icon map for rendering icons from string identifiers
 const iconMap = {
   TrendingUp: <TrendingUp size={16} />,
-  BarChart2: <BarChart2 size={16} />,
-  Award: <Award size={16} />,
+  // Award: <Award size={16} />,
   Plus: <Plus size={16} />,
   LogOut: <LogOut size={16} />,
 };
@@ -25,16 +23,11 @@ const baseCommands = [
     icon: 'TrendingUp',
     action: (setTab) => setTab('quickStats'),
   },
-  {
-    name: 'Go to Analytics',
-    icon: 'BarChart2',
-    action: (setTab) => setTab('analytics'),
-  },
-  {
-    name: 'Go to Achievements',
-    icon: 'Award',
-    action: (setTab) => setTab('achievements'),
-  },
+  // {
+  //   name: 'Go to Achievements',
+  //   icon: 'Award',
+  //   action: (setTab) => setTab('achievements'),
+  // },
   {
     name: 'Create New Scenario',
     icon: 'Plus',

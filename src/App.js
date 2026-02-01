@@ -16,7 +16,6 @@ import SavedScenarios from './pages/SavedScenarios';
 import Support from './pages/Support';
 import PaymentsPage from './pages/PaymentsPage';
 import ResourcesPage from './pages/ResourcesPage';
-import Settings from './pages/Settings';
 import AnalyticsPage from './pages/AnalyticsPage';
 import ScenarioTabs from './pages/ScenarioTabs';
 import OmnisDashboard from './pages/OmnisDashboard';
@@ -300,7 +299,6 @@ const AppContent = () => {
                         <Route path="/activity-log" element={<PrivateRoute><ActivityLog /></PrivateRoute>} />
                         <Route path="/resources" element={<PrivateRoute><ResourcesPage /></PrivateRoute>} />
                         <Route path="/new-scenario" element={<PrivateRoute><ScenarioTabs /></PrivateRoute>} />
-                        <Route path="/settings" element={<PrivateRoute><Settings /></PrivateRoute>} />
                         <Route path="/analytics" element={<PrivateRoute><AnalyticsPage /></PrivateRoute>} />
                         <Route path="/payments" element={<PrivateRoute><PaymentsPage /></PrivateRoute>} />
                         <Route path="/notifications" element={<PrivateRoute><NotificationsPage /></PrivateRoute>} />

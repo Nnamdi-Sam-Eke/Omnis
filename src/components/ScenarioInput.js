@@ -645,7 +645,7 @@ const handleSimulate = async () => {
 
   return (
     <>
-      <div className="flex flex-col xl:flex-row h-[38vh] gap-8 w-full max-w-7xl mx-auto">
+      <div className="w-full h-full">
         {/* Left Panel - Scenario Input */}
         <div className="flex-1 min-w-0">
           <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-xl overflow-hidden">
@@ -684,7 +684,7 @@ const handleSimulate = async () => {
             </div>
 
             {/* Collapsible Content */}
-            <div className={`transition-all duration-500 ease-in-out ${isOpen ? 'max-h-[610px] opacity-100' : 'max-h-0 opacity-0'} overflow-hidden`}>
+<div className={`transition-all duration-700 ease-in-out ${isOpen ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'} overflow-hidden`}>
               <div className="p-6 space-y-6">
                 {/* Scenarios List */}
                 <div className="space-y-4 max-h-[500px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent">

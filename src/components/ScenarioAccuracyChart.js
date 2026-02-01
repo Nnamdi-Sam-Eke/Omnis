@@ -189,7 +189,7 @@ const ScenarioAccuracyChart = forwardRef((props,ref) => {
         </div>
       </div>
 
-      <div className={`transition-all duration-500 ease-in-out overflow-x-auto ${isOpen ? 'max-h-[1200px] opacity-100' : 'max-h-0 opacity-0'}`}>
+      <div className={`transition-all duration-500 ease-in-out overflow-y-auto overflow-x-auto ${isOpen ? 'max-h-[600px] opacity-100' : 'max-h-0 opacity-0'}`}>
         <div className="flex flex-wrap gap-3 mb-6">
           {[7, 14, 30, "all"].map((d) => (
             <button

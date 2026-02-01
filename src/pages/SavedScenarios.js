@@ -2,6 +2,7 @@ import React, { useEffect, useState, lazy, Suspense } from "react";
 import { collection, getDocs, query, where, orderBy } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../AuthContext";
+import { useNavigate } from "react-router-dom"; // ADD THIS IMPORT
 
 const SavedComponent = lazy(() => import("../components/Saved"));
 const HistoryComponent = lazy(() => import("../components/History"));
@@ -13,6 +14,7 @@ const tabLabels = {
 
 const SavedScenariosTabs = () => {
   const { currentUser } = useAuth();
+  const navigate = useNavigate(); // ADD THIS
   const [activeTab, setActiveTab] = useState("saved");
   const [savedScenarios, setSavedScenarios] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -56,7 +58,7 @@ const SavedScenariosTabs = () => {
   }, [currentUser]);
 
   const filteredSavedScenarios = savedScenarios.filter((item) =>
-    item.name.toLowerCase().includes(searchQuery.toLowerCase())
+    item.name?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   useEffect(() => {
@@ -66,11 +68,16 @@ const SavedScenariosTabs = () => {
       const names = [...new Set(savedScenarios.map((i) => i.name))];
       setSuggestions(
         names.filter((name) =>
-          name.toLowerCase().startsWith(searchQuery.toLowerCase())
+          name?.toLowerCase().startsWith(searchQuery.toLowerCase())
         )
       );
     }
   }, [searchQuery, savedScenarios]);
+
+  // FUNCTION TO HANDLE NAVIGATION TO SCENARIO TABS
+  const handleViewScenario = (scenario) => {
+    navigate('/new-scenario', { state: { scenario } });
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-indigo-900">
@@ -152,7 +159,11 @@ const SavedScenariosTabs = () => {
                     tabIndex={0}
                     className="animate-in fade-in duration-500"
                   >
-                    <SavedComponent scenarios={filteredSavedScenarios} />
+                    <SavedComponent 
+                      scenarios={filteredSavedScenarios}
+                      setCurrentSavedScenario={handleViewScenario}
+                      setSidebarOpen={() => {}} // Not needed here since we're navigating
+                    />
                   </div>
                 </Suspense>
               )}
@@ -182,8 +193,6 @@ const SavedScenariosTabs = () => {
             </div>
           </div>
         )}
-
-        
       </div>
 
       <style jsx>{`

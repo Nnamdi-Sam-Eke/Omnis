@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Clock, Activity, CheckCircle, AlertCircle, User, FileText, Settings, TrendingDown, Trophy, Bell, ChevronDown, Filter, ExternalLink, Zap } from "lucide-react";
+import { Clock, Activity, CheckCircle, AlertCircle, User, FileText,  TrendingDown, Trophy, Bell, ChevronDown, Filter, ExternalLink, Zap } from "lucide-react";
 
 const RecentActivityFeed = () => {
   const [activities, setActivities] = useState([]);
@@ -169,7 +169,7 @@ const RecentActivityFeed = () => {
   const displayedActivities = isExpanded ? filteredActivities : filteredActivities.slice(0, 5);
 
   return (
-    <div className="min-w-[300px] max-h-[400px] bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 flex flex-col overflow-hidden">
+    <div className="min-w-[300px] max-h-[600px] bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 flex flex-col overflow-hidden relative">
       {/* Header */}
       <div className="p-6 border-b border-gray-100 dark:border-gray-800 flex-shrink-0">
         <div className="flex items-center justify-between mb-4">
@@ -324,6 +324,11 @@ const RecentActivityFeed = () => {
           </button>
         </div>
       )}
+
+      {/* Coming Soon Overlay */}
+      <div className="absolute inset-0 bg-black/30 flex items-center justify-center backdrop-blur-sm">
+        <p className="text-white text-2xl font-bold drop-shadow-sm">Coming Soon 🔒...</p>
+      </div>
     </div>
   );
 };

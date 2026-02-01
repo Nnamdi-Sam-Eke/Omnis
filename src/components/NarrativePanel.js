@@ -50,8 +50,8 @@ const NarrativePanel = forwardRef((props, ref) => {
       </div>
 
       <div
-        className={`transition-all duration-500 ease-in-out overflow-hidden ${
-          isOpen ? 'max-h-[600px] opacity-100' : 'max-h-0 opacity-0'
+        className={`transition-all duration-500 ease-in-out overflow-y-auto ${
+          isOpen ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'
         }`}
       >
         <div className="transition-all duration-300 bg-gradient-to-br from-white via-orange-25/50 to-amber-25/30 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 rounded-2xl border border-orange-100/50 dark:border-orange-500/40 shadow-inner dark:shadow-orange-900/20 p-6">

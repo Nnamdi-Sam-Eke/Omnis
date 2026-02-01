@@ -32,7 +32,7 @@ const LineChart = ({ data, options }) => {
   const maxValue = Math.max(...data.datasets[0].data);
   const minValue = Math.min(...data.datasets[0].data);
   const chartWidth = 340;
-  const chartHeight = 140;
+  const chartHeight = 260;
   const padding = { left: 40, right: 20, top: 20, bottom: 40 };
   
   const handleMouseMove = (event, value, index, date) => {
@@ -74,7 +74,7 @@ const LineChart = ({ data, options }) => {
         </div>
       </div>
       
-      <div className="relative h-48">
+      <div className="relative h-80">
         <svg viewBox={`0 0 ${chartWidth + padding.left + padding.right} ${chartHeight + padding.top + padding.bottom}`} className="w-full h-full">
           <defs>
             <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%">
@@ -276,7 +276,6 @@ const allData = [
 
 export default function SimulationTrendsChart() {
   const [range, setRange] = useState(7);
-  const [isExpanded, setIsExpanded] = useState(true);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -287,11 +286,9 @@ export default function SimulationTrendsChart() {
 
   useEffect(() => {
     // Only show loader when changing range, not on expand/collapse
-    if (isExpanded) {
-      setLoading(true);
-      const t = setTimeout(() => setLoading(false), 600);
-      return () => clearTimeout(t);
-    }
+    setLoading(true);
+    const t = setTimeout(() => setLoading(false), 600);
+    return () => clearTimeout(t);
   }, [range]);
 
   const sliceStart = range === "all" ? 0 : allData.length - Number(range);
@@ -318,12 +315,10 @@ export default function SimulationTrendsChart() {
   const percentChange = previousValue > 0 ? ((change / previousValue) * 100).toFixed(1) : 0;
 
   return (
-    <div className="bg-white/80 backdrop-blur-sm hover:shadow-2xl hover:shadow-blue-500/20 transition-all duration-500 px-4 sm:px-8 py-6 dark:bg-slate-900/80 dark:backdrop-blur-sm border border-slate-200 dark:border-slate-700 rounded-3xl shadow-xl hover:scale-[1.02] hover:border-blue-300 dark:hover:border-blue-700 max-h-[90vh] sm:max-h-[600px] flex flex-col">
+    <div className="bg-white/80 backdrop-blur-sm hover:shadow-2xl hover:shadow-blue-500/20 transition-all duration-500 px-4 sm:px-8 py-6 dark:bg-slate-900/80 dark:backdrop-blur-sm border border-slate-200 dark:border-slate-700 rounded-3xl shadow-xl hover:scale-[1.02] hover:border-blue-300 dark:hover:border-blue-700 max-h-[90vh] sm:max-h-[1000px] flex flex-col">
       {/* Header - Fixed */}
       <div
-        className="flex justify-between items-center cursor-pointer mb-4 group flex-shrink-0"
-        onClick={() => setIsExpanded((prev) => !prev)}
-        aria-expanded={isExpanded}
+        className="flex justify-between items-center mb-4 group flex-shrink-0"
       >
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
@@ -340,80 +335,68 @@ export default function SimulationTrendsChart() {
         </div>
         
         <div className="flex items-center gap-4">
-          {isExpanded && (
-            <div className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-50 to-cyan-50 dark:from-emerald-900/30 dark:to-cyan-900/30 rounded-full border border-emerald-200 dark:border-emerald-800">
-              <TrendingUp className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-              <span className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">
-                {change > 0 ? '+' : ''}{percentChange}%
-              </span>
-            </div>
-          )}
-          
-          <div className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center group-hover:bg-gradient-to-r group-hover:from-blue-100 group-hover:to-cyan-100 dark:group-hover:from-blue-900/30 dark:group-hover:to-cyan-900/30 transition-all duration-300">
-            {isExpanded ? (
-              <ChevronUp className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors duration-300" />
-            ) : (
-              <ChevronRight className="w-5 h-5 text-slate-600 dark:text-slate-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors duration-300" />
-            )}
+          <div className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-50 to-cyan-50 dark:from-emerald-900/30 dark:to-cyan-900/30 rounded-full border border-emerald-200 dark:border-emerald-800">
+            <TrendingUp className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <span className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+              {change > 0 ? '+' : ''}{percentChange}%
+            </span>
           </div>
+          
+          
         </div>
       </div>
 
       {/* Scrollable Content */}
       <div
-        className={`transition-all duration-500 ease-out overflow-hidden flex-1 min-h-0 ${
-          isExpanded ? 'opacity-100' : 'max-h-0 opacity-0'
-        }`}
+        className={`transition-all duration-500 ease-out overflow-hidden flex-1 min-h-0`}
       >
-        {isExpanded && (
-          <div className="h-full overflow-y-auto overflow-x-hidden pr-2 pb-4 scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-600 scrollbar-track-transparent">
-            <div className="flex flex-wrap justify-between items-center mb-4 gap-4">
-              <div className="flex items-center gap-6">
-                <div className="text-center">
-                  <div className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
-                    {currentValue}
-                  </div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400">Current</div>
+        <div className="h-full overflow-y-auto overflow-x-hidden pr-2 pb-4 scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-600 scrollbar-track-transparent">
+          <div className="flex flex-wrap justify-between items-center mb-4 gap-4">
+            <div className="flex items-center gap-6">
+              <div className="text-center">
+                <div className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
+                  {currentValue}
                 </div>
-                <div className="text-center">
-                  <div className="text-xl font-semibold text-slate-700 dark:text-slate-300">
-                    {Math.round(filtered.reduce((acc, curr) => acc + curr.simulations, 0) / filtered.length)}
-                  </div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400">Average</div>
-                </div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">Current</div>
               </div>
-              
-              <div className="flex gap-2 flex-wrap">
-                {[7, 14, 30, "all"].map((d) => (
-                  <button
-                    key={d}
-                    onClick={() => setRange(d)}
-                    className={`px-4 py-2 text-sm rounded-full font-medium transition-all duration-300 ${
-                      range === d
-                        ? "bg-gradient-to-r from-blue-500 via-cyan-500 to-purple-500 text-white shadow-lg shadow-blue-500/30 scale-105"
-                        : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:scale-105"
-                    }`}
-                  >
-                    {d === "all" ? "All Time" : `${d}d`}
-                  </button>
-                ))}
+              <div className="text-center">
+                <div className="text-xl font-semibold text-slate-700 dark:text-slate-300">
+                  {Math.round(filtered.reduce((acc, curr) => acc + curr.simulations, 0) / filtered.length)}
+                </div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">Average</div>
               </div>
             </div>
-
-            <div className="relative w-full min-h-[280px] h-auto rounded-2xl overflow-hidden mb-4">
-              <div className={`transition-opacity duration-300 ${loading ? 'opacity-0' : 'opacity-100'}`}>
-                <Suspense fallback={<ModernLoader height="h-full" />}>
-                  <LineChart data={chartData} options={{}} />
-                </Suspense>
-              </div>
-              {loading && (
-                <div className="absolute inset-0">
-                  <ModernLoader height="h-full" />
-                </div>
-              )}
+            
+            <div className="flex gap-2 flex-wrap">
+              {[7, 14, 30, "all"].map((d) => (
+                <button
+                  key={d}
+                  onClick={() => setRange(d)}
+                  className={`px-4 py-2 text-sm rounded-full font-medium transition-all duration-300 ${
+                    range === d
+                      ? "bg-gradient-to-r from-blue-500 via-cyan-500 to-purple-500 text-white shadow-lg shadow-blue-500/30 scale-105"
+                      : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:scale-105"
+                  }`}
+                >
+                  {d === "all" ? "All Time" : `${d}d`}
+                </button>
+              ))}
             </div>
           </div>
-        )}
+
+          <div className="relative w-full min-h-[420px] h-auto rounded-2xl overflow-hidden mb-4">
+            <div className={`transition-opacity duration-300 ${loading ? 'opacity-0' : 'opacity-100'}`}>
+              <Suspense fallback={<ModernLoader height="h-full" />}>
+                <LineChart data={chartData} options={{}} />
+              </Suspense>
+            </div>
+            {loading && (
+              <div className="absolute inset-0">
+                <ModernLoader height="h-full" />
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

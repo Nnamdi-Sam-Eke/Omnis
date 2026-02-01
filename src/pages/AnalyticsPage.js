@@ -236,7 +236,7 @@ const AnalyticsPage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50 dark:from-slate-900 dark:via-slate-800 dark:to-blue-900">
+    <div className="min-h-screen overflow-y-auto bg-gradient-to-br from-slate-50 via-white to-blue-50 dark:from-slate-900 dark:via-slate-800 dark:to-blue-900">
       <div className="container mx-auto px-6 py-8">
         {/* Header Section */}
         <motion.div

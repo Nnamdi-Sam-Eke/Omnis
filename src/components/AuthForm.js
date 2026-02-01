@@ -143,7 +143,7 @@ const AuthForm = () => {
           Omnis
         </h1>
 <p className="text-2xl font-light text-center italic text-white/80">
-  Simulate tomorrow. Decide today.
+  Model. Adapt. Succeed.
 </p>
 
       </div>

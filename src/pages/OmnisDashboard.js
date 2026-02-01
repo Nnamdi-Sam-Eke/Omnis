@@ -21,9 +21,8 @@ import WeatherLocation from '../components/WeatherLocation';
 
 // Lazy-loaded components
 const ActivityFeed = lazy(() => import('../components/ActivityFeed'));
-const AnalyticsOverview = lazy(() => import('../components/AnalyticsOverview'));
 const SimulationTrendsChart = lazy(() => import('../components/SimulationTrendsChart'));
-const TaskPlanner = lazy(() => import('../components/TaskList'));
+
 
 const OmnisDashboard = () => {
   const [userFirstName, setUserFirstName] = useState(null);
@@ -144,8 +143,7 @@ const OmnisDashboard = () => {
         document.getElementById('dashboard-search')?.focus();
       }
       if (e.altKey && e.key === '1') handleTabSwitch('quickStats');
-      if (e.altKey && e.key === '2') handleTabSwitch('analytics');
-      // if (e.altKey && e.key === '3') handleTabSwitch('achievements'); // ✅ Commented out
+      // if (e.altKey && e.key === '2') handleTabSwitch('achievements'); // ✅ Commented out
       if (e.key === 'Escape') document.activeElement.blur();
       if (e.key === '?') setShowShortcuts(prev => !prev);
       if (e.key === 'Enter' && showShortcuts) {
@@ -174,17 +172,15 @@ const OmnisDashboard = () => {
     );
   }
   
-  const tabLabels = {
-    quickStats: 'Pilot Dashboard',
-    analytics: 'Analytics',
-    // achievements: 'Accomplishments', // ✅ Commented out
-  };
+  // const tabLabels = {
+  //   quickStats: 'Pilot Dashboard',
+  //     // achievements: 'Accomplishments', // ✅ Commented out
+  // };
 
-  const tabIcons = {
-    quickStats: '🎯',
-    analytics: '📊', 
-    // achievements: '🏆' // ✅ Commented out
-  };
+  // const tabIcons = {
+  //   quickStats: '🎯',
+  //   // achievements: '🏆' // ✅ Commented out
+  // };
 
   return (
     <>
@@ -228,66 +224,7 @@ const OmnisDashboard = () => {
           </div>
         </div>
 
-        {/* Enhanced Tab Navigation */}
-        <div className="relative mb-8">
-          {/* Tab Container with improved styling */}
-          <div className="relative bg-white/40 dark:bg-gray-800/40 backdrop-blur-md rounded-2xl p-2 
-                        shadow-lg border border-white/20 dark:border-gray-700/30 max-w-fit mx-auto sm:mx-0">
-            
-            {/* Sliding Background Indicator */}
-            <div 
-              className="absolute top-2 bottom-2 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl 
-                       shadow-lg transition-all duration-300 ease-out z-0"
-              style={{
-                left: `${Object.keys(tabLabels).indexOf(activeTab) * (100 / Object.keys(tabLabels).length)}%`,
-                width: `${100 / Object.keys(tabLabels).length}%`,
-                transform: 'translateX(0.5rem)',
-                right: '0.5rem'
-              }}
-            />
-            
-            {/* Tab Buttons */}
-            <div className="relative z-10 flex">
-              {Object.keys(tabLabels).map((tab) => (
-                <button
-                  key={tab}
-                  role="tab"
-                  aria-selected={activeTab === tab}
-                  aria-controls={`${tab}-panel`}
-                  id={`${tab}-tab`}
-                  onClick={() => handleTabSwitch(tab)}
-                  disabled={isTabTransitioning}
-                  className={`group relative flex-1 px-6 py-3 rounded-xl font-semibold text-sm
-                           transition-all duration-300 ease-out focus:outline-none focus:ring-2 
-                           focus:ring-blue-500/50 disabled:opacity-50 min-w-[120px] sm:min-w-[140px]
-                           ${activeTab === tab
-                             ? 'text-white shadow-lg transform scale-[1.02]'
-                             : 'text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                           }
-                           ${isTabTransitioning ? 'pointer-events-none' : 'hover:scale-[1.01]'}`}
-                >
-                  <div className="flex items-center justify-center gap-2">
-                    <span className="text-lg leading-none">{tabIcons[tab]}</span>
-                    <span className="font-medium tracking-wide hidden sm:inline">
-                      {tabLabels[tab]}
-                    </span>
-                    <span className="font-medium tracking-wide sm:hidden text-xs">
-                      {tabLabels[tab].split(' ')[0]}
-                    </span>
-                  </div>
-                  
-                  {/* Active indicator dot */}
-                  {activeTab === tab && (
-                    <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2">
-                      <div className="w-1 h-1 bg-white rounded-full animate-pulse" />
-                    </div>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
+        {/* Enhanced Tab Navigation - ✅ Only showing quickStats now */}
         {/* Main Content with improved transitions */}
         <div className="relative min-h-[600px]">
           {/* Content container with crossfade effect */}
@@ -391,9 +328,7 @@ const OmnisDashboard = () => {
                     </div>
                   </div>
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-                    <div>
-                      <TaskPlanner />
-                    </div>
+                    
                     <div>
                       <ActionButtons />
                     </div>
@@ -404,21 +339,6 @@ const OmnisDashboard = () => {
                 <div className="flex justify-center">
                   <QuickActions />
                 </div>
-              </div>
-            )}
-
-            {activeTab === 'analytics' && (
-              <div id="analytics-panel" role="tabpanel" aria-labelledby="analytics-tab">
-                <div className="mb-8">
-                  <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 
-                               bg-clip-text text-transparent mb-2">
-                    Analytics Overview
-                  </h2>
-                  <div className="w-20 h-1 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full" />
-                </div>
-                <Suspense fallback={<SkeletonLoader height="h-[300px]" />}>
-                  <AnalyticsOverview />
-                </Suspense>
               </div>
             )}
 
@@ -474,7 +394,7 @@ const OmnisDashboard = () => {
                 {[
                   { key: '/', desc: 'Focus search' },
                   { key: 'Alt + 1', desc: 'Pilot Dashboard Tab' },
-                  { key: 'Alt + 2', desc: 'Analytics Tab' },
+                  // { key: 'Alt + 2', desc: 'Analytics Tab' }, // ✅ Commented out
                   // { key: 'Alt + 3', desc: 'Accomplishments Tab' }, // ✅ Commented out
                   { key: 'Esc', desc: 'Blur input / Close modals' },
                   { key: '?', desc: 'Toggle this help dialog' },

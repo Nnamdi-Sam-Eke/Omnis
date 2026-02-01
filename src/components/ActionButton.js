@@ -1,14 +1,8 @@
-import React, { useState, useRef } from 'react';
-import { Plus, FileText, Database, BarChart3, Upload, Download, Settings, Zap, ChevronDown, Check } from 'lucide-react';
+import React, { useState} from 'react';
+import { FileText,  Download,  Zap,  } from 'lucide-react';
 
 const ActionButtons = () => {
-  const [isExpanded, setIsExpanded] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
-  const fileInputRef = useRef(null);
-
-  const toggleExpand = () => {
-    setIsExpanded(!isExpanded);
-  };
 
   // Generate PDF Report - Enhanced version matching ScenarioSimulationCard
   const handleCreateReport = () => {
@@ -314,23 +308,6 @@ const ActionButtons = () => {
     }
   };
 
-  // Handle file upload
-  const handleAddData = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileSelected = (event) => {
-    const files = event.target.files;
-    if (files && files.length > 0) {
-      const file = files[0];
-      console.log('File selected:', file.name, file.type, file.size);
-      alert(`✅ File "${file.name}" selected successfully!\nType: ${file.type}\nSize: ${(file.size / 1024).toFixed(2)} KB`);
-      
-      // Here you would typically process the file
-      // For example, read CSV, Excel, JSON, etc.
-    }
-  };
-
   // Export data in different formats
   const handleExport = (format) => {
     try {
@@ -471,26 +448,6 @@ Success Rate: ${exportData.summary.successRate}
       onClick: handleCreateReport
     },
     {
-      id: 'add-data',
-      label: 'Add Data',
-      icon: Database,
-      color: 'from-green-500 to-emerald-600',
-      hoverColor: 'from-green-600 to-emerald-700',
-      description: 'Import data from your device',
-      shortcut: 'Ctrl+D',
-      onClick: handleAddData
-    },
-    {
-      id: 'analyze',
-      label: 'Analyze',
-      icon: BarChart3,
-      color: 'from-purple-500 to-indigo-600',
-      hoverColor: 'from-purple-600 to-indigo-700',
-      description: 'Run advanced analytics on your data',
-      shortcut: 'Ctrl+A',
-      onClick: () => alert('🔍 Analysis feature coming soon!')
-    },
-    {
       id: 'export',
       label: 'Export Data',
       icon: Download,
@@ -503,18 +460,7 @@ Success Rate: ${exportData.summary.successRate}
   ];
 
   return (
-    <div className={`bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden ${
-      isExpanded ? 'max-h-[400px]' : ''
-    } flex flex-col`}>
-      {/* Hidden file input */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        onChange={handleFileSelected}
-        className="hidden"
-        accept=".csv,.xlsx,.xls,.json,.xml,.txt"
-      />
-
+    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden flex flex-col">
       {/* Header */}
       <div className="p-6 border-b border-gray-100 dark:border-gray-800 flex-shrink-0">
         <div className="flex items-center justify-between">
@@ -525,25 +471,17 @@ Success Rate: ${exportData.summary.successRate}
             <div>
               <h3 className="text-xl font-bold text-gray-800 dark:text-white">Quick Actions</h3>
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                {isExpanded ? 'All available actions' : 'Most used actions'}
+                Available actions
               </p>
             </div>
           </div>
-          <button
-            onClick={toggleExpand}
-            className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all duration-200"
-          >
-            {isExpanded ? 'Show Less' : 'Show More'}
-          </button>
         </div>
       </div>
 
-      {/* Action Buttons - Scrollable when expanded */}
-      <div className={`${isExpanded ? 'flex-1 overflow-y-auto' : ''} p-6`}>
-        <div className={`grid gap-4 transition-all duration-300 ${
-          isExpanded ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-2' : 'grid-cols-1 sm:grid-cols-2'
-        }`}>
-          {(isExpanded ? actions : actions.slice(0, 2)).map((action) => {
+      {/* Action Buttons */}
+      <div className="p-6">
+        <div className="grid gap-4 transition-all duration-300 grid-cols-1 sm:grid-cols-2">
+          {actions.map((action) => {
             const IconComponent = action.icon;
             return (
               <div
@@ -559,7 +497,7 @@ Success Rate: ${exportData.summary.successRate}
                 </button>
                 
                 {/* Tooltip */}
-                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
+                {/* <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
                   <div className="bg-gray-900 dark:bg-gray-700 text-white text-sm px-3 py-2 rounded-lg shadow-lg whitespace-nowrap">
                     {action.description}
                     {action.shortcut && (
@@ -567,7 +505,7 @@ Success Rate: ${exportData.summary.successRate}
                     )}
                     <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-900 dark:border-t-gray-700"></div>
                   </div>
-                </div>
+                </div> */}
               </div>
             );
           })}

@@ -5,7 +5,9 @@ import {
   query,
   orderBy,
   limit,
-  where
+  where,
+  getDocs,
+  Timestamp
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../AuthContext";
@@ -33,7 +35,13 @@ const KpiCard = () => {
   const [activeUsers, setActiveUsers] = useState(null);
   const [avgAccuracy, setAvgAccuracy] = useState(null);
   const [uptime, setUptime] = useState("99.99%");
+  
+  // New state for analytics cards
+  const [totalSessionsToday, setTotalSessionsToday] = useState(0);
+  const [scenariosRunToday, setScenariosRunToday] = useState(0);
+  
   const { user } = useAuth();
+  const todayKey = new Date().toISOString().split('T')[0];
 
   // Auto-scroll functionality
   const [isAutoScrolling, setIsAutoScrolling] = useState(false);
@@ -92,6 +100,42 @@ const KpiCard = () => {
     if (num >= 1000) return (num / 1000).toFixed(1) + "K";
     return num.toString();
   };
+
+  // Load session count from localStorage
+  const loadSessionCount = () => {
+    const sessionCount = parseInt(localStorage.getItem(`sessionCount_${todayKey}`) || '0', 10);
+    setTotalSessionsToday(sessionCount);
+  };
+
+  // Fetch scenarios run today from Firestore
+  const fetchScenariosToday = async () => {
+    if (!user) return;
+    
+    try {
+      const userId = user.uid;
+      const today = new Date();
+      const start = new Date(today.setHours(0, 0, 0, 0));
+      const end = new Date(today.setHours(23, 59, 59, 999));
+      
+      const q = query(
+        collection(db, 'userInteractions'),
+        where('userId', '==', userId),
+        where('action', '==', 'simulate_scenario'),
+        where('timestamp', '>=', Timestamp.fromDate(start)),
+        where('timestamp', '<=', Timestamp.fromDate(end))
+      );
+      
+      const snap = await getDocs(q);
+      setScenariosRunToday(snap.size);
+    } catch (e) {
+      console.error("Error fetching scenarios today:", e);
+      setScenariosRunToday(0);
+    }
+  };
+
+  
+    
+  
 
   // Fetch and set data from Firebase
   useEffect(() => {
@@ -266,6 +310,12 @@ const KpiCard = () => {
       title: "System Status",
       value: systemStatus,
       iconColor: "text-red-500"
+    },
+    {
+      icon: <FiBarChart className="text-3xl md:text-4xl" />,
+      title: "Scenarios Run Today",
+      value: formatNumber(scenariosRunToday),
+      iconColor: "text-orange-500"
     },
     {
       icon: <FiActivity className="text-3xl md:text-4xl" />,

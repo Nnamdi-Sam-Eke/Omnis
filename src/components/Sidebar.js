@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   FiHome, FiGrid, FiMessageCircle, FiPlus, FiBookmark, FiBarChart,
-  FiList, FiDatabase, FiHelpCircle, FiSettings, FiUserX, FiLogOut, FiCreditCard
+  FiList, FiDatabase, FiHelpCircle,FiUserX, FiLogOut, FiCreditCard
 } from 'react-icons/fi';
 import { useAuth } from '../AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
@@ -84,7 +84,7 @@ function Sidebar({ isSidebarOpen, setIsSidebarOpen, onHoverChange }) {
     { name: 'Resources', icon: <FiDatabase />, path: '/resources' },
     { name: 'Payments', icon: <FiCreditCard />, path: '/payments' },
     { name: 'Support', icon: <FiHelpCircle />, path: '/support' },
-    { name: 'Settings', icon: <FiSettings />, path: '/settings' },
+    // { name: 'Settings', icon: <FiSettings />, path: '/settings' },
     { name: 'My Profile', icon: <FiUserX />, path: '/profile', mobileOnly: true }
   ];
 

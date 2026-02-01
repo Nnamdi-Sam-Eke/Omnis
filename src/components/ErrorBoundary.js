@@ -32,7 +32,7 @@ class ErrorBoundary extends React.Component {
             >
               support
             </button>
-            .
+            
           </p>
         </div>
       );

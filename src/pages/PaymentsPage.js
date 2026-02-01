@@ -59,7 +59,7 @@ const PaymentsPage = () => {
   };
 
   return (
-    <div className="lg:h-[205vh]  sm:min-h-screen flex-1 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-gray-900 dark:via-slate-900 dark:to-gray-800">
+    <div className="min-h-screen flex-1 bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-gray-900 dark:via-slate-900 dark:to-gray-800">
       {/* Header Section */}
       <div className="relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-teal-600/10 dark:from-blue-400/5 dark:via-purple-400/5 dark:to-teal-400/5" />

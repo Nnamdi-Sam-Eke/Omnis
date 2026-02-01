@@ -1,23 +1,30 @@
 import React, { lazy, Suspense, useState, useRef, useEffect } from "react";
+import { useLocation } from "react-router-dom";
+import SavedScenarioViewer from "../components/SavedScenarioViewer";
 
 const ScenarioInput = lazy(() => import("../components/ScenarioInput"));
 const SimulationResult = lazy(() => import("../components/SimulationResult"));
 
 const ScenarioTabs = () => {
-  const DEFAULT_LEFT = 40; // percentage default for left pane
+  const DEFAULT_LEFT = 40; // default left pane width (%)
   const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT);
   const [isDragging, setIsDragging] = useState(false);
   const [draggingLeft, setDraggingLeft] = useState(false);
-  // persists the blur state until user drags back to the right
   const [leftBlurActive, setLeftBlurActive] = useState(false);
   const containerRef = useRef(null);
   const lastClientXRef = useRef(null);
+  const location = useLocation();
 
-  // Shared simulation state
+  // Sidebar state
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [currentSavedScenario, setCurrentSavedScenario] = useState(null);
+
+  // Simulation state
   const [simulationResults, setSimulationResults] = useState([]);
   const [simulationInput, setSimulationInput] = useState("");
   const [simulationLoading, setSimulationLoading] = useState(false);
 
+  // Handle divider drag
   const handleMouseDown = (e) => {
     e.preventDefault();
     lastClientXRef.current = e.clientX;
@@ -28,21 +35,15 @@ const ScenarioTabs = () => {
   const handleMouseMove = (e) => {
     if (!isDragging || !containerRef.current) return;
 
-    const container = containerRef.current;
-    const rect = container.getBoundingClientRect();
+    const rect = containerRef.current.getBoundingClientRect();
     const newLeftWidth = ((e.clientX - rect.left) / rect.width) * 100;
 
-    // detect drag direction: left if current clientX is less than last
     if (lastClientXRef.current != null) {
       const draggingNowLeft = e.clientX < lastClientXRef.current;
       if (draggingNowLeft !== draggingLeft) setDraggingLeft(draggingNowLeft);
 
-      // persist blur when dragging left; clear when dragging right
-      if (draggingNowLeft) {
-        setLeftBlurActive(true);
-      } else {
-        setLeftBlurActive(false);
-      }
+      // persist blur when dragging left
+      setLeftBlurActive(draggingNowLeft);
     }
     lastClientXRef.current = e.clientX;
 
@@ -53,7 +54,6 @@ const ScenarioTabs = () => {
 
   const handleMouseUp = () => {
     setIsDragging(false);
-    // do NOT clear leftBlurActive here; it should persist until user drags right
     setDraggingLeft(false);
     lastClientXRef.current = null;
   };
@@ -65,7 +65,6 @@ const ScenarioTabs = () => {
       document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
     }
-
     return () => {
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
@@ -74,18 +73,81 @@ const ScenarioTabs = () => {
     };
   }, [isDragging]);
 
-  // Left blur should persist until user drags divider back to the right
+  // Open sidebar if navigation contains a scenario
+  useEffect(() => {
+    if (location.state?.scenario) {
+      setCurrentSavedScenario(location.state.scenario);
+      setSidebarOpen(true);
+    }
+  }, [location.state]);
+
+  const handleEdit = (updatedScenario) => {
+    console.log("Editing scenario:", updatedScenario);
+    
+    const parts = [];
+    
+    if (updatedScenario?.category) {
+      parts.push(`📁 Category: ${updatedScenario.category}`);
+    }
+    
+    if (updatedScenario?.query) {
+      parts.push(`📝 Scenario:\n${updatedScenario.query}`);
+    }
+    
+    if (updatedScenario?.variables && Object.keys(updatedScenario.variables).length > 0) {
+      const varsText = Object.entries(updatedScenario.variables)
+        .map(([key, value]) => `  • ${key}: ${value}`)
+        .join('\n');
+      parts.push(`⚙️ Variables:\n${varsText}`);
+    }
+    
+    const inputText = parts.join('\n\n');
+    setSimulationInput(inputText);
+    setSidebarOpen(false);
+  };
+
+  const handleReRun = (updatedVariables) => {
+    console.log("Re-running scenario with variables:", updatedVariables);
+    
+    const parts = [];
+    
+    if (currentSavedScenario?.category) {
+      parts.push(`📁 Category: ${currentSavedScenario.category}`);
+    }
+    
+    if (currentSavedScenario?.query) {
+      parts.push(`📝 Scenario:\n${currentSavedScenario.query}`);
+    }
+    
+    if (updatedVariables && Object.keys(updatedVariables).length > 0) {
+      const varsText = Object.entries(updatedVariables)
+        .map(([key, value]) => `  • ${key}: ${value}`)
+        .join('\n');
+      parts.push(`⚙️ Variables:\n${varsText}`);
+    }
+    
+    const inputText = parts.join('\n\n');
+    setSimulationInput(inputText);
+    setSimulationLoading(true);
+    setSidebarOpen(false);
+    
+    setTimeout(() => {
+      setSimulationLoading(false);
+    }, 2000);
+  };
+
   const leftBlur = leftBlurActive;
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-slate-50 to-blue-50 dark:from-gray-900 dark:to-slate-900">
 
       {/* =======================
-          MOBILE (< md)
+          MOBILE (< md) - FIXED VERSION
           ======================= */}
-      <div className="md:hidden flex-1 flex flex-col p-3 sm:p-4 pb-0 min-h-0">
-        <div className="max-w-7xl mx-auto flex-1 flex flex-col w-full min-h-0">
+      <div className="md:hidden flex flex-col p-3 sm:p-4 pb-20 h-full overflow-y-auto">
+        <div className="max-w-7xl mx-auto w-full">
 
+          {/* Header */}
           <div className="mb-6 flex-shrink-0">
             <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mt-4 mb-2">
               Creation Playground
@@ -94,29 +156,35 @@ const ScenarioTabs = () => {
           </div>
 
           <Suspense fallback={<MobileLoader />}>
-            <div className="flex-1 pt-8 pb-24 flex flex-col min-h-0">
-              <ScenarioInput
-                setGeneratedResults={setSimulationResults}
-                setSimulationInput={setSimulationInput}
-                setSimulationLoading={setSimulationLoading}
-              />
+            {/* Vertical Stack - Components push each other naturally */}
+            <div className="flex flex-col gap-6">
+              
+              {/* Scenario Input */}
+              <div className="w-full">
+                <ScenarioInput
+                  setGeneratedResults={setSimulationResults}
+                  setSimulationInput={setSimulationInput}
+                  setSimulationLoading={setSimulationLoading}
+                />
+              </div>
 
-              <div className="h-2 flex-shrink-0 pb-8" />
+              {/* Simulation Result */}
+              <div className="w-full pb-20">
+                <SimulationResult
+                  results={simulationResults}
+                  setResults={setSimulationResults}
+                  loading={simulationLoading}
+                  simulationInput={simulationInput}
+                />
+              </div>
 
-              <SimulationResult
-                results={simulationResults}
-                setResults={setSimulationResults}
-                loading={simulationLoading}
-                simulationInput={simulationInput}
-              />
             </div>
           </Suspense>
-
         </div>
       </div>
 
       {/* =======================
-          DESKTOP (≥ md)
+          DESKTOP (≥ md) - No changes needed
           ======================= */}
       <div className="hidden md:flex md:flex-col md:flex-1 min-h-0">
 
@@ -142,7 +210,7 @@ const ScenarioTabs = () => {
             className="flex flex-1 overflow-hidden min-h-0"
           >
 
-            {/* LEFT — Scenario Input */}
+            {/* LEFT – Scenario Input */}
             <aside
               style={{ width: `${leftWidth}%` }}
               className={`overflow-y-auto bg-slate-900/90 border-r border-white/5 flex-shrink-0 min-h-0 transition-filter duration-150 ${leftBlur ? 'blur-[2px]' : ''}`}
@@ -170,12 +238,12 @@ const ScenarioTabs = () => {
               </div>
             </div>
 
-            {/* RIGHT — Results */}
+            {/* RIGHT – Results */}
             <main
               style={{ width: `${100 - leftWidth}%` }}
               className="flex-1 h-[810px] bg-white overflow-y-auto bg-slate-950/95 dark:bg-gray-900/95"
-              >
-                <SimulationResult
+            >
+              <SimulationResult
                 results={simulationResults}
                 setResults={setSimulationResults}
                 loading={simulationLoading}
@@ -185,8 +253,20 @@ const ScenarioTabs = () => {
 
           </div>
         </Suspense>
-
       </div>
+
+      {/* =======================
+          Adaptive Saved Scenario Viewer
+          ======================= */}
+      {sidebarOpen && currentSavedScenario && (
+        <SavedScenarioViewer
+          scenario={currentSavedScenario}
+          onClose={() => setSidebarOpen(false)}
+          onReRun={handleReRun}
+          onEdit={handleEdit}
+        />
+      )}
+
     </div>
   );
 };

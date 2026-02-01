@@ -393,8 +393,8 @@ const UptimeChart = forwardRef(({ onRendered }, ref) => {
       </div>
 
       <div
-        className={`transition-all duration-500 ease-in-out overflow-hidden ${
-          isOpen ? 'flex-1 min-h-[300px] opacity-100' : 'max-h-0 opacity-0'
+        className={`transition-all duration-500 ease-in-out overflow-y-auto ${
+          isOpen ? 'flex-1 miax-h-[500px] opacity-100' : 'max-h-0 opacity-0'
         }`}
       >
         {loading ? (
@@ -478,7 +478,7 @@ const UptimeChart = forwardRef(({ onRendered }, ref) => {
                 <p className="text-sm text-gray-500 dark:text-gray-500 mt-2">Try adjusting your date range or check back later.</p>
               </div>
             ) : (
-              <div className="w-full h-[400px] bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+              <div className="w-full h-[200px] bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
                 {chartType === 'bar' ? (
                   <Bar data={getChartData()} options={chartOptions} />
                 ) : (
