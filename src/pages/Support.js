@@ -191,7 +191,7 @@ const SupportPage = () => {
                             }`} />
                             <div className="relative p-6">
                               <button
-                                role="button"
+                               
                                 tabIndex={0}
                                 aria-expanded={isOpen(categoryIdx, faqIdx)}
                                 aria-controls={`faq-${categoryIdx}-${faqIdx}`}
