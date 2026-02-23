@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
-  FiHome, FiGrid, FiMessageCircle, FiPlus, FiBookmark, FiBarChart,
+ FiGrid, FiMessageCircle, FiPlus, FiBookmark, FiBarChart,
   FiList, FiDatabase, FiHelpCircle,FiUserX, FiLogOut, FiCreditCard
 } from 'react-icons/fi';
 import { useAuth } from '../AuthContext';
@@ -74,7 +74,7 @@ function Sidebar({ isSidebarOpen, setIsSidebarOpen, onHoverChange }) {
   };
 
   const navItems = [
-    { name: 'Home', icon: <FiHome />, path: '/home' },
+    // { name: 'Home', icon: <FiHome />, path: '/home' },
     { name: 'Dashboard', icon: <FiGrid />, path: '/dashboard' },
     { name: 'Partner Chat', icon: <FiMessageCircle />, path: '/partner-chat' },
     { name: 'New Scenario', icon: <FiPlus />, path: '/new-scenario' },

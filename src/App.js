@@ -10,7 +10,7 @@ import SessionTracker from './components/SessionTracker';
 // Pages
 import OnboardingContainer from './components/onboarding/OnboardingContainer';
 import SplashScreen from './components/SplashScreen';
-import Home from './pages/Home';
+// import Home from './pages/Home';
 import PartnerChat from './pages/PartnerChat';
 import SavedScenarios from './pages/SavedScenarios';
 import Support from './pages/Support';
@@ -291,7 +291,7 @@ const AppContent = () => {
                         <Route path="/onboarding" element={<PrivateRoute><OnboardingContainer /></PrivateRoute>} />
                         <Route path="/login" element={<PublicRoute><AuthForm /></PublicRoute>} />
                         <Route path="/" element={<PrivateRoute><OmnisDashboard /></PrivateRoute>} />
-                        <Route path="/home" element={<PrivateRoute><Home /></PrivateRoute>} />
+                        {/* <Route path="/home" element={<PrivateRoute><Home /></PrivateRoute>} /> */}
                         <Route path="/dashboard" element={<PrivateRoute><OmnisDashboard /></PrivateRoute>} />
                         <Route path="/partner-chat" element={<PrivateRoute><PartnerChat /></PrivateRoute>} />
                         <Route path="/saved-scenarios" element={<PrivateRoute><SavedScenarios /></PrivateRoute>} />

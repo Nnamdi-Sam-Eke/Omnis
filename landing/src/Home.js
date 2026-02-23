@@ -99,7 +99,7 @@ function Home() {
 
   // Hero Section
   const HeroSection = () => (
-    <div className="relative min-h-screen bg-black flex items-start pt-8 md:pt-16 overflow-hidden">
+    <div className="relative min-h-[75vh] bg-black flex items-start pt-8 md:pt-16 overflow-hidden">
       {/* Subtle animated blobs - very dark */}
       <div className="absolute inset-0 opacity-10" aria-hidden="true">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500 rounded-full mix-blend-lighten filter blur-3xl animate-blob will-change-transform"></div>
@@ -107,24 +107,24 @@ function Home() {
         <div className="absolute bottom-1/4 left-1/3 w-96 h-96 bg-indigo-500 rounded-full mix-blend-lighten filter blur-3xl animate-blob animation-delay-4000 will-change-transform"></div>
       </div>
       
-      <div className="relative z-10 max-w-5xl mx-auto md:ml-12 px-4 md:px-6 py-2 md:py-8">
-        <div className="max-w-xl md:max-w-2xl">
-          <div className="inline-flex items-center px-4 py-2 bg-purple-500/10 border border-purple-400/30 rounded-full text-purple-300 text-sm mb-8 backdrop-blur-sm">
+      <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-xl md:max-w-2xl lg:max-w-3xl">
+          <div className="inline-flex items-center px-4 py-2 bg-purple-500/10 border border-purple-400/30 rounded-full text-purple-300 text-sm mb-6 md:mb-8 backdrop-blur-sm">
             <Sparkles aria-hidden="true" className="w-4 h-4 mr-2" />
             Now in Beta
           </div>
           
-          <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-black text-white mb-4 md:mb-6 leading-tight tracking-tight">
+          <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-black text-white mb-4 md:mb-6 leading-tight tracking-tight">
             Omnis
           </h1>
           
-          <p className="text-lg sm:text-xl md:text-2xl font-medium text-gray-300 mb-6 md:mb-8 tracking-tight">
+          <p className="text-lg sm:text-xl md:text-2xl lg:text-3xl font-medium text-gray-300 mb-6 md:mb-8 tracking-tight">
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-violet-400 to-indigo-400 animate-pulse-slow">
               Clarity for complex decisions.
             </span>
           </p>
           
-          <p className="text-sm md:text-base text-gray-400 mb-8 md:mb-12 leading-relaxed max-w-2xl font-normal">
+          <p className="text-sm sm:text-base md:text-lg text-gray-400 mb-8 md:mb-12 leading-relaxed max-w-2xl font-normal">
             A decision-support platform that helps you evaluate choices before acting. Organize variables, constraints, and options to get clear, interpretable insights — so you can decide with confidence, not guesswork.
           </p>
           
@@ -151,7 +151,7 @@ function Home() {
 
   // About Section with visual interest
   const AboutSection = () => (
-    <section className="reveal py-16 bg-black relative overflow-hidden">
+    <section className="reveal py-12 md:py-16 lg:py-20 bg-black relative overflow-hidden">
       {/* Background pattern */}
       <div className="absolute inset-0 opacity-3">
         <div className="absolute inset-0" style={{
@@ -160,59 +160,59 @@ function Home() {
         }}></div>
       </div>
       
-      <div className="relative z-10 max-w-6xl mx-auto px-6">
-        <div className="grid lg:grid-cols-2 gap-16 items-start">
-          <div className="space-y-12">
+      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-start">
+          <div className="space-y-8 md:space-y-12">
             <div>
-              <h2 className="text-2xl font-bold text-white mb-6 tracking-tight">Why Omnis Exists</h2>
-              <p className="text-sm text-gray-300 leading-relaxed font-normal">
+              <h2 className="text-xl md:text-2xl lg:text-3xl font-bold text-white mb-4 md:mb-6 tracking-tight">Why Omnis Exists</h2>
+              <p className="text-sm md:text-base text-gray-300 leading-relaxed font-normal">
                 Important decisions are rarely simple. They involve uncertainty, trade-offs, and long-term consequences. Most tools either oversimplify these realities or overwhelm you with information. Omnis is built to do neither.
               </p>
             </div>
 
             <div>
-              <h2 className="text-2xl font-bold text-white mb-6 tracking-tight">How It Helps</h2>
-              <p className="text-sm text-gray-300 leading-relaxed font-normal">
+              <h2 className="text-xl md:text-2xl lg:text-3xl font-bold text-white mb-4 md:mb-6 tracking-tight">How It Helps</h2>
+              <p className="text-sm md:text-base text-gray-300 leading-relaxed font-normal">
                 You define your situation and options. Omnis structures the problem, analyzes the factors involved, and highlights key trade-offs — presenting insights in a clear, interpretable way. The goal isn't automation. It's better judgment.
               </p>
             </div>
           </div>
 
           <div className="lg:sticky lg:top-8">
-            <div className="bg-gradient-to-br from-purple-500/10 to-violet-500/10 backdrop-blur-xl rounded-3xl border border-purple-400/20 p-6 relative overflow-hidden">
+            <div className="bg-gradient-to-br from-purple-500/10 to-violet-500/10 backdrop-blur-xl rounded-2xl md:rounded-3xl border border-purple-400/20 p-4 md:p-6 relative overflow-hidden">
               {/* Animated elements */}
               <div className="absolute top-4 right-4 w-3 h-3 bg-purple-400 rounded-full animate-pulse"></div>
               <div className="absolute bottom-8 left-8 w-2 h-2 bg-violet-400 rounded-full animate-pulse animation-delay-1000"></div>
               <div className="absolute top-1/2 right-8 w-2 h-2 bg-indigo-400 rounded-full animate-pulse animation-delay-2000"></div>
               
-              <div className="space-y-8">
-                <div className="flex items-start space-x-4">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-purple-600 to-violet-600 flex items-center justify-center flex-shrink-0">
-                    <Zap aria-hidden="true" className="w-5 h-5 text-white" />
+              <div className="space-y-6 md:space-y-8">
+                <div className="flex items-start space-x-3 md:space-x-4">
+                  <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-gradient-to-r from-purple-600 to-violet-600 flex items-center justify-center flex-shrink-0">
+                    <Zap aria-hidden="true" className="w-4 h-4 md:w-5 md:h-5 text-white" />
                   </div>
                   <div>
-                    <h3 className="text-base font-semibold text-white mb-2 tracking-tight">Structured Reasoning</h3>
-                    <p className="text-xs text-gray-400 font-normal">Built on frameworks that reflect how decisions actually work.</p>
+                    <h3 className="text-sm md:text-base font-semibold text-white mb-2 tracking-tight">Structured Reasoning</h3>
+                    <p className="text-xs md:text-sm text-gray-400 font-normal">Built on frameworks that reflect how decisions actually work.</p>
                   </div>
                 </div>
                 
-                <div className="flex items-start space-x-4">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 flex items-center justify-center flex-shrink-0">
-                    <Target aria-hidden="true" className="w-5 h-5 text-white" />
+                <div className="flex items-start space-x-3 md:space-x-4">
+                  <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 flex items-center justify-center flex-shrink-0">
+                    <Target aria-hidden="true" className="w-4 h-4 md:w-5 md:h-5 text-white" />
                   </div>
                   <div>
-                    <h3 className="text-base font-semibold text-white mb-2 tracking-tight">Transparent Insights</h3>
-                    <p className="text-xs text-gray-400 font-normal">Every recommendation shows why it makes sense.</p>
+                    <h3 className="text-sm md:text-base font-semibold text-white mb-2 tracking-tight">Transparent Insights</h3>
+                    <p className="text-xs md:text-sm text-gray-400 font-normal">Every recommendation shows why it makes sense.</p>
                   </div>
                 </div>
                 
-                <div className="flex items-start space-x-4">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 flex items-center justify-center flex-shrink-0">
-                    <CheckCircle aria-hidden="true" className="w-5 h-5 text-white" />
+                <div className="flex items-start space-x-3 md:space-x-4">
+                  <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 flex items-center justify-center flex-shrink-0">
+                    <CheckCircle aria-hidden="true" className="w-4 h-4 md:w-5 md:h-5 text-white" />
                   </div>
                   <div>
-                    <h3 className="text-base font-semibold text-white mb-2 tracking-tight">Calm by Design</h3>
-                    <p className="text-xs text-gray-400 font-normal">Clarity, not noise. Insight over information overload.</p>
+                    <h3 className="text-sm md:text-base font-semibold text-white mb-2 tracking-tight">Calm by Design</h3>
+                    <p className="text-xs md:text-sm text-gray-400 font-normal">Clarity, not noise. Insight over information overload.</p>
                   </div>
                 </div>
               </div>
@@ -243,14 +243,14 @@ function Home() {
     };
 
     return (
-      <section className="reveal py-16 bg-black relative overflow-hidden">
+      <section className="reveal py-12 md:py-16 lg:py-20 bg-black relative overflow-hidden">
         {/* Subtle background gradient */}
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-purple-950/10 to-transparent" />
         
-        <div className="relative z-10 max-w-6xl mx-auto px-6">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold text-white mb-4 tracking-tight">How It Works</h2>
-            <p className="text-base text-gray-400 font-normal">Three steps to better judgment</p>
+        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12 md:mb-16">
+            <h2 className="text-2xl md:text-3xl lg:text-4xl font-bold text-white mb-4 tracking-tight">How It Works</h2>
+            <p className="text-sm md:text-base text-gray-400 font-normal">Three steps to better judgment</p>
           </div>
           
           <div className="relative" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
@@ -262,22 +262,22 @@ function Home() {
               />
             </div>
             
-            <div className="grid lg:grid-cols-3 gap-8 relative">
+            <div className="grid lg:grid-cols-3 gap-6 md:gap-8 relative">
               {steps.map((step, i) => (
                 <div key={i} className={`relative cursor-pointer`} onClick={() => setCurrentStep(i)}>
-                  <div className={`bg-zinc-950/80 backdrop-blur border ${i === currentStep ? 'border-purple-500/50' : 'border-zinc-800'} rounded-2xl p-4 hover:border-purple-500/50 transition-all duration-300`}>
-                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl font-bold mb-6 transition-all duration-500 ${i === currentStep ? 'bg-gradient-to-r from-purple-500 to-violet-500 text-white transform translate-y-0 opacity-100' : 'bg-zinc-900 text-zinc-500 transform -translate-y-2 opacity-60'}`} style={{willChange: 'transform'}}>
+                  <div className={`bg-zinc-950/80 backdrop-blur border ${i === currentStep ? 'border-purple-500/50' : 'border-zinc-800'} rounded-xl md:rounded-2xl p-4 md:p-6 hover:border-purple-500/50 transition-all duration-300`}>
+                    <div className={`w-10 h-10 md:w-12 md:h-12 rounded-lg md:rounded-xl flex items-center justify-center text-xl md:text-2xl font-bold mb-4 md:mb-6 transition-all duration-500 ${i === currentStep ? 'bg-gradient-to-r from-purple-500 to-violet-500 text-white transform translate-y-0 opacity-100' : 'bg-zinc-900 text-zinc-500 transform -translate-y-2 opacity-60'}`} style={{willChange: 'transform'}}>
                       {step.icon}
                     </div>
-                    <h3 className={`text-lg font-bold mb-3 text-white tracking-tight transition-opacity duration-500 ${i===currentStep ? 'opacity-100' : 'opacity-60'}`}>{step.title}</h3>
-                    <p className={`text-xs text-gray-400 leading-relaxed font-normal transition-all duration-500 ${i===currentStep ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2 pointer-events-none'}`}>{step.desc}</p>
+                    <h3 className={`text-base md:text-lg font-bold mb-2 md:mb-3 text-white tracking-tight transition-opacity duration-500 ${i===currentStep ? 'opacity-100' : 'opacity-60'}`}>{step.title}</h3>
+                    <p className={`text-xs md:text-sm text-gray-400 leading-relaxed font-normal transition-all duration-500 ${i===currentStep ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2 pointer-events-none'}`}>{step.desc}</p>
                   </div>
                 </div>
               ))}
             </div>
             
             {/* Step indicators */}
-            <div className="flex justify-center mt-12 space-x-2">
+            <div className="flex justify-center mt-8 md:mt-12 space-x-2">
               {steps.map((step, i) => (
                 <button
                   key={i}
@@ -296,24 +296,24 @@ function Home() {
 
   // Use Cases with hover effects
   const UseCasesSection = () => (
-    <section className="reveal py-16 bg-black">
-      <div className="max-w-6xl mx-auto px-6">
-        <div className="text-center mb-16">
-          <h2 className="text-3xl font-bold mb-4 text-white tracking-tight">Built for Thoughtful Decision-Makers</h2>
-          <p className="text-base text-gray-400 font-normal">If you value structured thinking and intentional action</p>
+    <section className="reveal py-12 md:py-16 lg:py-20 bg-black">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="text-center mb-12 md:mb-16">
+          <h2 className="text-2xl md:text-3xl lg:text-4xl font-bold mb-4 text-white tracking-tight">Built for Thoughtful Decision-Makers</h2>
+          <p className="text-sm md:text-base text-gray-400 font-normal">If you value structured thinking and intentional action</p>
         </div>
         
-        <div className="grid md:grid-cols-2 gap-6">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-2 gap-4 md:gap-6">
           {useCases.map((useCase, i) => (
             <div
               key={i}
-              className="group relative bg-zinc-950/50 backdrop-blur border border-zinc-800 rounded-2xl p-6 hover:border-purple-600/50 transition-all duration-300 hover:shadow-xl hover:shadow-purple-500/10"
+              className="group relative bg-zinc-950/50 backdrop-blur border border-zinc-800 rounded-xl md:rounded-2xl p-4 md:p-6 hover:border-purple-600/50 transition-all duration-300 hover:shadow-xl hover:shadow-purple-500/10"
             >
-              <div className={`w-12 h-12 rounded-xl bg-gradient-to-r ${useCase.color} flex items-center justify-center text-white mb-6 group-hover:scale-110 transition-transform duration-300 usecase-icon will-change-transform`}>
+              <div className={`w-10 h-10 md:w-12 md:h-12 rounded-lg md:rounded-xl bg-gradient-to-r ${useCase.color} flex items-center justify-center text-white mb-4 md:mb-6 group-hover:scale-110 transition-transform duration-300 usecase-icon will-change-transform`}>
                 {useCase.icon}
               </div>
-              <h3 className="text-lg font-bold mb-3 text-white tracking-tight">{useCase.title}</h3>
-              <p className="text-xs text-gray-400 leading-relaxed font-normal">{useCase.desc}</p>
+              <h3 className="text-base md:text-lg font-bold mb-2 md:mb-3 text-white tracking-tight">{useCase.title}</h3>
+              <p className="text-xs md:text-sm text-gray-400 leading-relaxed font-normal">{useCase.desc}</p>
             </div>
           ))}
         </div>
@@ -323,34 +323,34 @@ function Home() {
 
   // CTA Section
   const CallToActionSection = () => (
-    <section className="py-16 bg-black relative overflow-hidden">
+    <section className="py-12 md:py-16 lg:py-20 bg-black relative overflow-hidden">
       {/* Background effect */}
       <div className="absolute inset-0 opacity-10" aria-hidden="true">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500 rounded-full mix-blend-lighten filter blur-3xl animate-blob will-change-transform"></div>
         <div className="absolute top-1/3 right-1/4 w-96 h-96 bg-violet-500 rounded-full mix-blend-lighten filter blur-3xl animate-blob animation-delay-2000 will-change-transform"></div>
       </div>
       
-      <div className="relative z-10 max-w-4xl mx-auto px-6 text-center">
-        <h2 className="text-3xl sm:text-4xl font-bold mb-6 text-white tracking-tight">
+      <div className="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <h2 className="text-2xl md:text-3xl lg:text-4xl font-bold mb-4 md:mb-6 text-white tracking-tight">
           Better Decisions
           <span className="block text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-violet-400">
             Start with Clarity
           </span>
         </h2>
-        <p className="text-base text-gray-400 mb-12 max-w-2xl mx-auto font-normal">
+        <p className="text-sm md:text-base lg:text-lg text-gray-400 mb-8 md:mb-12 max-w-2xl mx-auto font-normal">
           Be among the first to experience decision-making with clarity, not guesswork. Join our beta community today.
         </p>
         
-        <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
+        <div className="flex flex-col sm:flex-row gap-3 md:gap-4 justify-center mb-8 md:mb-12">
           <a 
             href="https://forms.gle/ghzjN5MMdnAApqZ46" 
             target="_blank" 
             rel="noopener noreferrer"
             aria-label="Sign up for Beta" 
-            className="group bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-700 hover:to-violet-700 text-white px-8 py-3 rounded-xl font-bold text-lg transition-all duration-300 hover:shadow-xl hover:shadow-purple-500/25 tracking-tight animate-pulse-slow inline-block text-center"
+            className="group bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-700 hover:to-violet-700 text-white px-6 md:px-8 py-3 md:py-4 rounded-xl font-bold text-base md:text-lg transition-all duration-300 hover:shadow-xl hover:shadow-purple-500/25 tracking-tight animate-pulse-slow inline-block text-center"
           >
             Sign Up for Beta
-            <ArrowRight aria-hidden="true" className="inline ml-2 w-5 h-5 transition-transform group-hover:translate-x-1" />
+            <ArrowRight aria-hidden="true" className="inline ml-2 w-4 h-4 md:w-5 md:h-5 transition-transform group-hover:translate-x-1" />
           </a>
           
           <a 
@@ -358,19 +358,19 @@ function Home() {
             target="_blank" 
             rel="noopener noreferrer"
             aria-label="Join community" 
-            className="bg-zinc-950/80 backdrop-blur hover:bg-zinc-900 border border-zinc-800 hover:border-purple-600/50 text-white px-8 py-3 rounded-xl font-bold text-lg transition-all duration-300 tracking-tight inline-block text-center"
+            className="bg-zinc-950/80 backdrop-blur hover:bg-zinc-900 border border-zinc-800 hover:border-purple-600/50 text-white px-6 md:px-8 py-3 md:py-4 rounded-xl font-bold text-base md:text-lg transition-all duration-300 tracking-tight inline-block text-center"
           >
             Join Community
           </a>
         </div>
         
-        <div className="flex flex-wrap justify-center gap-8 text-sm text-gray-500">
+        <div className="flex flex-wrap justify-center gap-6 md:gap-8 text-xs md:text-sm text-gray-500">
           <span className="flex items-center">
-            <CheckCircle className="w-4 h-4 mr-2 text-purple-400" />
+            <CheckCircle className="w-3 h-3 md:w-4 md:h-4 mr-2 text-purple-400" />
             Free during beta
           </span>
           <span className="flex items-center">
-            <CheckCircle className="w-4 h-4 mr-2 text-purple-400" />
+            <CheckCircle className="w-3 h-3 md:w-4 md:h-4 mr-2 text-purple-400" />
             No credit card required
           </span>
         </div>
@@ -436,8 +436,13 @@ function Home() {
 
         @media (max-width: 640px) {
           .animate-blob { animation-duration: 12s; transform: scale(0.85); }
-          .bg-gradient-to-br.backdrop-blur-xl { padding: 1.5rem; }
+          .bg-gradient-to-br.backdrop-blur-xl { padding: 1rem; }
           .animate-pulse { animation-duration: 1.6s; }
+          .usecase-icon { transform: scale(1.05) !important; }
+        }
+
+        @media (max-width: 768px) {
+          .animate-blob { animation-duration: 10s; transform: scale(0.9); }
         }
 
         @media (prefers-reduced-motion: reduce) {
