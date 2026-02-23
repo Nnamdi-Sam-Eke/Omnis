@@ -50,12 +50,29 @@ function Home() {
     }
   ];
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentStep(s => (s + 1) % steps.length);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, []);
+
  useEffect(() => {
   const interval = setInterval(() => {
     setCurrentStep(s => (s + 1) % steps.length);
   }, 4000);
   return () => clearInterval(interval);
 }, [steps.length]);
+
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentStep(s => (s + 1) % steps.length);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Scroll-triggered reveal for sections (prefers-reduced-motion respected)
   useEffect(() => {
@@ -97,11 +114,11 @@ function Home() {
             Now in Beta
           </div>
           
-          <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-black text-white mb-4 md:mb-6 leading-tight tracking-tight">
+          <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-black text-white mb-4 md:mb-6 leading-tight tracking-tight">
             Omnis
           </h1>
           
-          <p className="text-xl sm:text-2xl md:text-3xl font-medium text-gray-300 mb-6 md:mb-8 tracking-tight">
+          <p className="text-lg sm:text-xl md:text-2xl font-medium text-gray-300 mb-6 md:mb-8 tracking-tight">
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-violet-400 to-indigo-400 animate-pulse-slow">
               Clarity for complex decisions.
             </span>
