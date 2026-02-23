@@ -50,12 +50,12 @@ function Home() {
     }
   ];
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentStep(s => (s + 1) % steps.length);
-    }, 4000);
-    return () => clearInterval(interval);
-  }, []);
+ useEffect(() => {
+  const interval = setInterval(() => {
+    setCurrentStep(s => (s + 1) % steps.length);
+  }, 4000);
+  return () => clearInterval(interval);
+}, [steps.length]);
 
   // Scroll-triggered reveal for sections (prefers-reduced-motion respected)
   useEffect(() => {
