@@ -75,7 +75,7 @@ function Sidebar({ isSidebarOpen, setIsSidebarOpen, onHoverChange }) {
 
   const navItems = [
     // { name: 'Home', icon: <FiHome />, path: '/home' },
-    { name: 'Dashboard', icon: <FiGrid />, path: '/dashboard' },
+    { name: 'Overview', icon: <FiGrid />, path: '/overview' },
     { name: 'Partner Chat', icon: <FiMessageCircle />, path: '/partner-chat' },
     { name: 'New Scenario', icon: <FiPlus />, path: '/new-scenario' },
     { name: 'Saved Scenarios', icon: <FiBookmark />, path: '/saved-scenarios' },

@@ -284,7 +284,7 @@ const AppContent = () => {
                         <Route path="/login" element={<PublicRoute><AuthForm /></PublicRoute>} />
                         <Route path="/" element={<PrivateRoute><OmnisDashboard /></PrivateRoute>} />
                         {/* <Route path="/home" element={<PrivateRoute><Home /></PrivateRoute>} /> */}
-                        <Route path="/dashboard" element={<PrivateRoute><OmnisDashboard /></PrivateRoute>} />
+                        <Route path="/overview" element={<PrivateRoute><OmnisDashboard /></PrivateRoute>} />
                         <Route path="/partner-chat" element={<PrivateRoute><PartnerChat /></PrivateRoute>} />
                         <Route path="/saved-scenarios" element={<PrivateRoute><SavedScenarios /></PrivateRoute>} />
                         <Route path="/support" element={<PrivateRoute><Support /></PrivateRoute>} />
