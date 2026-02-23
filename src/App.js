@@ -31,13 +31,11 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { OmnisProvider } from './context/OmnisContext';
 import { MemoryProvider } from './MemoryContext';
 import { AccountProvider } from './AccountContext';
-import { DiscountProvider, useDiscount } from './context/DiscountContext';
 import AuthForm from './components/AuthForm';
 import ProfilePage from './components/SimpleProfilePage';
 import AccountPage from './pages/ProfilePage';
 import StripeProvider from './StripeProvider';
 import UpgradeModal from './components/UpgradeModal';
-import DiscountBanner from './components/DiscountBanner';
 import './App.css';
 import useIdleTimer from './hooks/useIdleTimer';
 import WarningModal from './components/WarningModal';
@@ -72,7 +70,6 @@ const AppContent = () => {
   const [isSidebarHovered, setIsSidebarHovered] = useState(false);
 
   const hideLayout = noLayoutRoutes.includes(location.pathname);
-  const { showBanner, discountEndDate, setShowBanner } = useDiscount();
 
   const handleLogout = () => {
     signOut(auth).catch(error => {
@@ -230,12 +227,7 @@ const AppContent = () => {
   return (
     <div className="scale-75 origin-top-left w-[133.33%]">
       <div className="min-h-screen w-full bg-white dark:bg-gray-900">
-        {!hideLayout && showBanner && discountEndDate && (
-          <DiscountBanner
-            discountEndDate={discountEndDate}
-            onClose={() => setShowBanner(false)}
-          />
-        )}
+      
 
         {/* ✅ FIXED: Responsive padding - none on mobile, dynamic on desktop */}
         <main
@@ -329,9 +321,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <AuthProvider>
-        <DiscountProvider>
-          <AppContent />
-        </DiscountProvider>
+        <AppContent />
       </AuthProvider>
     </ErrorBoundary>
   );

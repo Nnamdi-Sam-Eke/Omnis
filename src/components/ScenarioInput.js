@@ -359,7 +359,6 @@ export default function ScenarioInput({ onSimulate, setGeneratedResults, setSimu
   const [trialExpired, setTrialExpired] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showUpgradeModalComponent, setShowUpgradeModalComponent] = useState(false);
-  const [discountDeadline, setDiscountDeadline] = useState(null);
   const [loading, setLoading] = React.useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false); // Add this state if not present
   
@@ -578,24 +577,6 @@ export default function ScenarioInput({ onSimulate, setGeneratedResults, setSimu
         if (now > trialEnd) {
           setTrialExpired(true);
           setShowUpgradeModal(true);
-
-          const discountDeadline = userData.discountAvailableUntil?.toDate?.() || user.discountAvailableUntil?.toDate?.();
-          if (!discountDeadline || now > discountDeadline) {
-            const newDiscountEnd = new Date();
-            newDiscountEnd.setDate(now.getDate() + 7);
-
-            const discountEndTimestamp = Timestamp.fromDate(newDiscountEnd);
-            await setDoc(
-              userRef,
-              {
-                discountAvailableUntil: discountEndTimestamp,
-              },
-              { merge: true }
-            );
-            setDiscountDeadline(newDiscountEnd);
-          } else {
-            setDiscountDeadline(discountDeadline);
-          }
 
           console.log("⏰ Trial expired");
         } else {
