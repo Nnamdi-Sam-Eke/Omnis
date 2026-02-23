@@ -18,7 +18,7 @@ const ScenarioSimulationCard = ({ results,
   const addFeedback = (timestamp, feedback) => {
     console.log(`Adding feedback: ${timestamp} - ${feedback}`);
   };
- const [toastMessage, setToastMessage] = useState(null);
+ const [toast, setToast] = useState({ title: "Notification", message: null });
   const [clickedButtons, setClickedButtons] = useState({});
   const [localResults, setLocalResults] = useState(results || []);
   const [rawResults, setRawResults] = useState({}); // Store raw results from /run
@@ -65,20 +65,22 @@ const ScenarioSimulationCard = ({ results,
   });
 
   const handleExportReportClick = () => {
-    setToastMessage("Branching paths under development, try again soon.");
-    setTimeout(() => setToastMessage(""), 4000);
+    setToast({ title: "Coming Soon", message: "Branching paths under development, try again soon." });
+    setTimeout(() => {
+      setToast({ title: "Notification", message: null });
+    }, 4000);
   };
   
   // ✅ Save scenario to user's savedScenarios collection
   const handleSaveScenario = async (result, timestamp) => {
     if (!user?.uid) {
-      setToastMessage("❌ Please log in to save scenarios");
+      setToast({ title: "Login Required", message: "❌ Please log in to save scenarios" });
       return;
     }
 
     try {
       if (savedScenarioIds.has(timestamp)) {
-        setToastMessage("ℹ️ Scenario already saved");
+        setToast({ title: "Already Saved", message: "ℹ️ Scenario already saved" });
         return;
       }
 
@@ -103,10 +105,10 @@ const ScenarioSimulationCard = ({ results,
       console.log("✅ Scenario saved to savedScenarios:", docRef.id);
 
       setSavedScenarioIds(prev => new Set([...prev, timestamp]));
-      setToastMessage("✅ Scenario saved successfully!");
+      setToast({ title: "Success", message: "✅ Scenario saved successfully!" });
     } catch (error) {
       console.error("❌ Error saving scenario:", error);
-      setToastMessage(`❌ Failed to save: ${error.message}`);
+      setToast({ title: "Save Failed", message: `❌ Failed to save: ${error.message}` });
     }
   };
 
@@ -125,11 +127,11 @@ const ScenarioSimulationCard = ({ results,
         return newSet;
       });
 
-      setToastMessage("✅ Scenario removed from saved");
+      setToast({ title: "Success", message: "✅ Scenario removed from saved" });
       console.log("✅ Scenario unsaved");
     } catch (error) {
       console.error("❌ Error unsaving scenario:", error);
-      setToastMessage(`❌ Failed to unsave: ${error.message}`);
+      setToast({ title: "Unsave Failed", message: `❌ Failed to unsave: ${error.message}` });
     }
   };
   // NEW: Handle explore branches functionality
@@ -188,13 +190,13 @@ const ScenarioSimulationCard = ({ results,
   };
 
    useEffect(() => {
-    if (toastMessage) {
+    if (toast.message) {
       const timer = setTimeout(() => {
-        setToastMessage(null);
+        setToast({ title: "Notification", message: null });
       }, 3000);
       return () => clearTimeout(timer);
     }
-  }, [toastMessage]);
+  }, [toast.message]);
 
   // Load available voices and detect screen size
   useEffect(() => {
@@ -567,25 +569,6 @@ const handleExplainFurther = async (result, timestamp) => {
   const [generatedContent, setGeneratedContent] = useState("");
   const [expandedContent, setExpandedContent] = useState("");
 
-  // --- Hook up generateOmnisContent to display result in output component ---
-useEffect(() => {
-  if (simulationInput) {
-    generateOmnisContent(simulationInput)
-      .then((content) => {
-        const resultObj = {
-          query: simulationInput,
-          response: { result: content, task: "Generated Content" },
-          timestamp: Date.now(),
-        };
-        setLocalResults([resultObj]);
-        if (setResults) setResults([resultObj]);
-      })
-      .catch((err) => {
-        console.error("Error generating content:", err);
-      });
-  }
-}, [simulationInput]);
-
   // Determine if we have results
   const hasResults = Array.isArray(localResults) && localResults.length > 0;
 
@@ -660,17 +643,17 @@ useEffect(() => {
               const timestamp = result?.timestamp || index;
               return (
                 <div key={timestamp} className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm p-6 rounded-xl shadow-lg border border-slate-200/50 dark:border-slate-700/50 hover:border-slate-300 dark:hover:border-slate-600 hover:shadow-xl transition-all duration-300 transform hover:scale-[1.02]">
-                  <div className="flex items-start justify-between mb-3 gap-3">
-                    <h4 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2 flex-1 min-w-0">
-                      <div className="w-2 h-2 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex-shrink-0"></div>
-                      <span className="truncate">{result?.query || "Unknown Query"}</span>
-                    </h4>
-                    {result?.category && (
-                      <span className="px-3 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 rounded-full text-xs font-medium whitespace-nowrap flex-shrink-0">
-                        {result.category}
-                      </span>
-                    )}
-                  </div>
+
+<div className="flex items-start justify-between mb-3 gap-3">
+  <h4 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2 flex-1 min-w-0">
+    <div className="w-2 h-2 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex-shrink-0"></div>
+    <span className="truncate">{result?.query || "Unknown Query"}</span>
+  </h4>
+  {/* Always show category tag */}
+  <span className="px-3 py-1 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-full text-xs font-semibold whitespace-nowrap flex-shrink-0 shadow-md">
+    {result.category || "Uncategorized"} 
+  </span>
+</div>
                   {result?.error ? (
                     <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
                       <span className="text-red-500">❌</span>
@@ -680,6 +663,30 @@ useEffect(() => {
                     <div className="text-sm text-slate-600 dark:text-slate-300 mt-2">
                       {result?.response?.result || "⚠️ No response"}
 
+                    </div>
+                  )}
+
+                  {/* Clarifications Section */}
+                  {result?.response?.clarifications && result.response.clarifications.length > 0 && (
+                    <div className="mt-4">
+                      <details className="group">
+                        <summary className="flex items-center gap-2 cursor-pointer text-sm font-medium text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 transition-colors">
+                          <span className="text-blue-500 group-open:rotate-90 transition-transform">▶</span>
+                          Clarifications used ({result.response.clarifications.length})
+                        </summary>
+                        <div className="mt-2 space-y-2 pl-6">
+                          {result.response.clarifications.map((clarification, idx) => (
+                            <div key={idx} className="text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 p-2 rounded border-l-2 border-blue-200 dark:border-blue-800">
+                              <div className="font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                {clarification.question}
+                              </div>
+                              <div className="text-slate-600 dark:text-slate-400">
+                                {clarification.answer || "No answer provided"}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
                     </div>
                   )}
 
@@ -754,7 +761,7 @@ useEffect(() => {
                     {/* Responsive Branch Button + Toast above it */}
                     <div className="relative flex flex-col items-center">
                       <AnimatePresence>
-                        {toastMessage && (
+                        {toast.message && (
                           <motion.div key="toast" initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.95 }} transition={{ duration: 0.3, type: "spring", stiffness: 300 }} className="z-[1000]" style={{ position: "absolute", bottom: "100%", left: "50%", transform: "translateX(-50%) translateY(-25px)", marginBottom: "0.5rem" }}>
                             <div className="bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl border border-white/20 dark:border-slate-700/50 rounded-2xl shadow-2xl p-4 max-w-xs">
                               <div className="flex items-center gap-3">
@@ -762,20 +769,20 @@ useEffect(() => {
                                   <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
                                 </div>
                                 <div>
-                                  <p className="font-semibold text-slate-800 dark:text-slate-200">Coming Soon</p>
-                                  <p className="text-sm text-slate-600 dark:text-slate-400">{toastMessage}</p>
+                                  <p className="font-semibold text-slate-800 dark:text-slate-200">{toast.title}</p>
+                                  <p className="text-sm text-slate-600 dark:text-slate-400">{toast.message}</p>
                                 </div>
                               </div>
                             </div>
                           </motion.div>
                         )}
                       </AnimatePresence>
-                      <button onClick={handleExportReportClick} disabled={isBranchingLoading} className={`group relative flex items-center justify-center gap-1 sm:gap-2 px-3 py-2 sm:px-4 sm:py-2 lg:px-5 lg:py-2.5 bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 disabled:from-purple-300 disabled:to-indigo-300 text-white rounded-lg sm:rounded-xl font-medium text-xs sm:text-sm lg:text-base transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 disabled:cursor-not-allowed disabled:transform-none flex-1 sm:flex-none ${toastMessage ? "branch-overlay-active" : ""}`} style={{ position: "relative", overflow: "hidden" }}>
+                      {/* <button onClick={handleExportReportClick} disabled={isBranchingLoading} className={`group relative flex items-center justify-center gap-1 sm:gap-2 px-3 py-2 sm:px-4 sm:py-2 lg:px-5 lg:py-2.5 bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 disabled:from-purple-300 disabled:to-indigo-300 text-white rounded-lg sm:rounded-xl font-medium text-xs sm:text-sm lg:text-base transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 disabled:cursor-not-allowed disabled:transform-none flex-1 sm:flex-none ${toast.message ? "branch-overlay-active" : ""}`} style={{ position: "relative", overflow: "hidden" }}>
                         <FiGitBranch className="text-sm sm:text-lg flex-shrink-0" />
                         <span className="whitespace-nowrap truncate">{isBranchingLoading ? 'Loading...' : 'Branch'}</span>
                         {!isBranchingLoading && (<div className="absolute inset-0 rounded-lg sm:rounded-xl bg-gradient-to-r from-purple-400/20 to-indigo-400/20 opacity-0 group-hover:opacity-100 transition-opacity animate-pulse" />)}
-                        {toastMessage && (<span className="absolute inset-0 rounded-lg sm:rounded-xl bg-gray-900/60 dark:bg-gray-800/70 pointer-events-none flex items-center justify-center" style={{ zIndex: 2 }}><FiLock className="text-2xl text-white opacity-90 drop-shadow-lg" /></span>)}
-                      </button>
+                        {toast.message && (<span className="absolute inset-0 rounded-lg sm:rounded-xl bg-gray-900/60 dark:bg-gray-800/70 pointer-events-none flex items-center justify-center" style={{ zIndex: 2 }}><FiLock className="text-2xl text-white opacity-90 drop-shadow-lg" /></span>)}
+                      </button> */}
                     </div>
                   </div>
                 </div>
@@ -1279,7 +1286,7 @@ useEffect(() => {
 
      {/* Modern Toast Notification */}
       <AnimatePresence>
-        {toastMessage && (
+        {toast.message && (
           <motion.div
             key="toast"
             initial={{ opacity: 0, x: -100, scale: 0.8 }}
@@ -1294,8 +1301,8 @@ useEffect(() => {
                   <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
                 </div>
                 <div>
-                  <p className="font-semibold text-slate-800 dark:text-slate-200">Coming Soon</p>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">{toastMessage}</p>
+                  <p className="font-semibold text-slate-800 dark:text-slate-200">{toast.title}</p>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">{toast.message}</p>
                 </div>
               </div>
             </div>

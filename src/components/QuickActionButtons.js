@@ -28,17 +28,17 @@ const QuickActions = () => {
         navigate("/saved-scenarios"); // ✅ Route to saved scenarios
       },
     },
-    {
-      label: "💬 Open Partner Chat",
-      bgColor: "bg-accent",
-      textColor: "text-black",
-      hoverColor: "hover:bg-accent/90",
-      glow: "rgba(236, 72, 153, 0.6)", // pink glow
-      onClick: () => {
-        console.log("Partner Chat clicked");
-        navigate("/partner-chat"); // ✅ Route to partner chat
-      },
-    },
+    // {
+    //   label: "💬 Open Partner Chat",
+    //   bgColor: "bg-accent",
+    //   textColor: "text-black",
+    //   hoverColor: "hover:bg-accent/90",
+    //   glow: "rgba(236, 72, 153, 0.6)", // pink glow
+    //   onClick: () => {
+    //     console.log("Partner Chat clicked");
+    //     navigate("/partner-chat"); // ✅ Route to partner chat
+    //   },
+    // },
   ];
 
   return (

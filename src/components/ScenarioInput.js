@@ -3,7 +3,8 @@ import { saveUserInteraction } from "../services/userBehaviourService";
 import { useMemory } from "../MemoryContext";
 import { db } from "../firebase";
 import { Trash2, Plus, Tag } from "lucide-react";
-import { generateOmnisContent, expandOmnisText } from "../services/omnis-actions";
+import { generateOmnisContent, expandOmnisText, generateOmnisClarifications } from "../services/omnis-actions";
+import UpgradeModal from "./UpgradeModal";
 import {
   doc,
   collection,
@@ -243,7 +244,30 @@ useEffect(() => {
 // Main ScenarioInput component with updated structure
 export default function ScenarioInput({ onSimulate, setGeneratedResults, setSimulationLoading, // ✅ Receive from parent
   setSimulationInput }) {
-  const [scenarios, setScenarios] = useState([{ text: "", category: "" }]);
+  const { user } = useAuth();
+  const storageKeyRef = useRef(user?.uid ? `omnis:scenario:${user.uid}` : "omnis:scenario:guest");
+
+  // Update storage key when user changes
+  useEffect(() => {
+    storageKeyRef.current = user?.uid ? `omnis:scenario:${user.uid}` : "omnis:scenario:guest";
+  }, [user?.uid]);
+
+  // Helper to get saved data for current user
+  const getSavedData = () => {
+    try {
+      const raw = localStorage.getItem(storageKeyRef.current);
+      return raw ? JSON.parse(raw) : {};
+    } catch (e) {
+      console.warn("Failed to load data from localStorage:", e);
+      return {};
+    }
+  };
+
+  // Initialize scenarios from localStorage
+  const [scenarios, setScenarios] = useState(() => {
+    const saved = getSavedData();
+    return saved?.scenarios || [{ text: "", category: "" }];
+  });
   // Default: open on desktop, closed on mobile
   const [isOpen, setIsOpen] = useState(() => window.innerWidth >= 768);
 
@@ -254,8 +278,14 @@ export default function ScenarioInput({ onSimulate, setGeneratedResults, setSimu
   const [error, setError] = useState(null);
   // Local simulation state (restored after refactor)
   // Local fallbacks for results and input in case parent did not provide setters
-  const [generatedResultsLocal, setGeneratedResultsLocal] = useState([]);
-  const [simulationInputLocal, setSimulationInputLocal] = useState("");
+  const [generatedResultsLocal, setGeneratedResultsLocal] = useState(() => {
+    const saved = getSavedData();
+    return saved?.generatedResults || [];
+  });
+  const [simulationInputLocal, setSimulationInputLocal] = useState(() => {
+    const saved = getSavedData();
+    return saved?.simulationInput || "";
+  });
   // Local simulation state
   const [simulationLoadingLocal, setSimulationLoadingLocal] = useState(false);
   
@@ -265,6 +295,19 @@ export default function ScenarioInput({ onSimulate, setGeneratedResults, setSimu
     setGeneratedResultsLocal(val);
     if (typeof setGeneratedResults === 'function') {
       try { setGeneratedResults(val); } catch (e) { console.warn('parent setGeneratedResults failed', e); }
+    }
+    // Immediately persist to localStorage
+    const payload = {
+      scenarios,
+      generatedResults: val,
+      simulationInput: simulationInputLocal,
+      savedAt: Date.now(),
+    };
+    try {
+      localStorage.setItem(storageKeyRef.current, JSON.stringify(payload));
+      console.log("✅ Immediately saved results to localStorage:", storageKeyRef.current, payload);
+    } catch (e) {
+      console.warn("Failed to persist results:", e);
     }
   };
 
@@ -286,14 +329,54 @@ export default function ScenarioInput({ onSimulate, setGeneratedResults, setSimu
       try { setSimulationInput(val); } catch (e) { console.warn('parent setSimulationInput failed', e); }
     }
   };
+
+  // On mount, initialize parent with restored data
+  useEffect(() => {
+    const saved = getSavedData();
+    if (saved?.generatedResults && saved.generatedResults.length > 0) {
+      if (typeof setGeneratedResults === 'function') {
+        try {
+          setGeneratedResults(saved.generatedResults);
+          console.log("✅ Initialized parent with restored results:", saved.generatedResults);
+        } catch (e) {
+          console.warn('Failed to initialize parent with restored results:', e);
+        }
+      }
+    }
+    if (saved?.simulationInput) {
+      if (typeof setSimulationInput === 'function') {
+        try {
+          setSimulationInput(saved.simulationInput);
+        } catch (e) {
+          console.warn('Failed to initialize parent with restored simulationInput:', e);
+        }
+      }
+    }
+  }, []); // Run only on mount
+
   const [chatHistory, setChatHistory] = useState([]);
   const [userInteractions, setUserInteractions] = useState([]);
   const [trialExpired, setTrialExpired] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const { user } = useAuth();
+  const [showUpgradeModalComponent, setShowUpgradeModalComponent] = useState(false);
   const [discountDeadline, setDiscountDeadline] = useState(null);
   const [loading, setLoading] = React.useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false); // Add this state if not present
+  
+  // ---- Clarification (NEW) ----
+  const [showClarifyModal, setShowClarifyModal] = useState(false);
+  const [clarifyLoading, setClarifyLoading] = useState(false);
+  const [clarifyError, setClarifyError] = useState(null);
+
+  const [pendingScenarios, setPendingScenarios] = useState([]); // scenarios awaiting processing
+  const [currentScenarioIndex, setCurrentScenarioIndex] = useState(0);
+
+  const [currentClarifications, setCurrentClarifications] = useState([]); // [{id, question}]
+  const [currentAnswers, setCurrentAnswers] = useState({}); // { qid: "answer" }
+
+  const [pendingResults, setPendingResults] = useState([]); // collects results for multiple scenarios
+  const pendingResultsRef = useRef([]);
+  const [clarifyStep, setClarifyStep] = useState(0); // index of current question
   
   // Get user tier for button logic
   const userTier = (
@@ -340,6 +423,69 @@ export default function ScenarioInput({ onSimulate, setGeneratedResults, setSimu
       loadUserInteractions();
     }
   }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    try {
+      const raw = localStorage.getItem(storageKeyRef.current);
+      if (!raw) return;
+
+      const saved = JSON.parse(raw);
+      console.log("✅ Restored scenario state from localStorage:", storageKeyRef.current, saved);
+
+      // Only restore if we have saved data and it's different from current state
+      if (saved?.scenarios && JSON.stringify(saved.scenarios) !== JSON.stringify(scenarios)) {
+        setScenarios(saved.scenarios);
+      }
+      if (saved?.generatedResults && JSON.stringify(saved.generatedResults) !== JSON.stringify(generatedResultsLocal)) {
+        updateGeneratedResults(saved.generatedResults);
+      }
+      if (saved?.simulationInput && saved.simulationInput !== simulationInputLocal) {
+        updateSimulationInput(saved.simulationInput);
+      }
+
+    } catch (e) {
+      console.warn("Failed to restore scenario state:", e);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (showClarifyModal) {
+      const prev = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = prev;
+      };
+    }
+  }, [showClarifyModal]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const payload = {
+      scenarios,
+      simulationInput: simulationInputLocal,
+      // isModalOpen, // optional
+      savedAt: Date.now(),
+    };
+
+    try {
+      localStorage.setItem(storageKeyRef.current, JSON.stringify(payload));
+      console.log("✅ Saved scenario state to localStorage:", storageKeyRef.current, payload);
+    } catch (e) {
+      console.warn("Failed to persist scenario state:", e);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scenarios, simulationInputLocal, user?.uid]);
+
+  const clearScenarioSession = () => {
+    localStorage.removeItem(storageKeyRef.current);
+    setScenarios([{ text: "", category: "Uncategorized" }]); // or your default
+    updateGeneratedResults([]);
+    updateSimulationInput("");
+  };
 
   const loadFirestoreMemory = async () => {
     if (!user) return;
@@ -512,6 +658,32 @@ export default function ScenarioInput({ onSimulate, setGeneratedResults, setSimu
 // Fixed handleSimulate function with better validation
 // Replace the handleSimulate function in ScenarioInput.js with this fixed version:
 
+const fetchClarificationsFor = async (scenarioText) => {
+  setClarifyLoading(true);
+  setClarifyError(null);
+
+  try {
+    const qs = await generateOmnisClarifications(scenarioText);
+    setCurrentClarifications(qs);
+    // Reset answers each time
+    const initial = {};
+    qs.forEach(q => { initial[q.id] = ""; });
+    setCurrentAnswers(initial);
+    setClarifyStep(0);
+  } catch (e) {
+    setClarifyError(e.message || "Failed to generate clarifying questions.");
+    setCurrentClarifications([
+      { id: "q1", question: "What outcome matters most to you here (success definition)?" },
+      { id: "q2", question: "What is your main constraint right now (money/time/energy/authority)?" },
+      { id: "q3", question: "What is your time horizon for this decision (days/weeks/months)?" },
+    ]);
+    setCurrentAnswers({ q1: "", q2: "", q3: "" });
+    setClarifyStep(0);
+  } finally {
+    setClarifyLoading(false);
+  }
+};
+
 const handleSimulate = async () => {
   if (!user) {
     setError("Please log in to run simulations.");
@@ -523,11 +695,10 @@ const handleSimulate = async () => {
     return;
   }
 
-  // Get all non-empty scenarios with validation
   const filteredScenarios = scenarios.filter((s) => {
-    if (!s || typeof s !== 'object') return false;
-    if (!s.text || typeof s.text !== 'string') return false;
-    if (s.text.trim() === '') return false;
+    if (!s || typeof s !== "object") return false;
+    if (!s.text || typeof s.text !== "string") return false;
+    if (s.text.trim() === "") return false;
     return true;
   });
 
@@ -536,84 +707,85 @@ const handleSimulate = async () => {
     return;
   }
 
-  // ✅ CRITICAL: Set loading FIRST and give React time to update
-  updateSimulationLoading(true);
+  // Begin pipeline: show clarifications first
   setError(null);
-  
-  // ✅ Add a small delay to ensure the loading state renders
-  await new Promise(resolve => setTimeout(resolve, 100));
+  setPendingScenarios(filteredScenarios);
+  setCurrentScenarioIndex(0);
+  pendingResultsRef.current = [];
+  setPendingResults([]);
+
+  // Generate clarifications for first scenario and open modal
+  await fetchClarificationsFor(filteredScenarios[0].text.trim());
+  setShowClarifyModal(true);
+};
+
+const runAnalysisForCurrentScenario = async () => {
+  const scenario = pendingScenarios[currentScenarioIndex];
+  if (!scenario) return;
+
+  // basic answer validation (optional, light)
+  const missing = currentClarifications.some(q => !(currentAnswers[q.id] || "").trim());
+  if (missing) {
+    setClarifyError("Please answer the clarifying questions (short answers are fine).");
+    return;
+  }
+
+  // Turn on simulation loading now (this is the actual analysis call)
+  updateSimulationLoading(true);
+  setClarifyError(null);
 
   try {
-    // Process all scenarios and collect results
-    const results = await Promise.all(
-      filteredScenarios.map(async (scenario, index) => {
-        try {
-          const scenarioText = scenario.text.trim();
-          
-          console.log(`Processing scenario ${index + 1}:`, {
-            text: scenarioText,
-            category: scenario.category || 'Uncategorized',
-            textLength: scenarioText.length
-          });
+    const scenarioText = scenario.text.trim();
 
-          const generatedContent = await generateOmnisContent(scenarioText);
-          
-          if (!generatedContent || typeof generatedContent !== 'string') {
-            throw new Error(`No valid content generated for scenario ${index + 1}`);
-          }
+    // Build clarifications array with answers
+    const clarificationsWithAnswers = currentClarifications.map(q => ({
+      ...q,
+      answer: (currentAnswers[q.id] || "").trim()
+    }));
 
-          console.log(`✅ Scenario ${index + 1} processed successfully`);
+    const generatedContent = await generateOmnisContent(scenarioText, clarificationsWithAnswers);
 
-          await handleScenarioSubmit(
-            scenarioText, 
-            { result: generatedContent, task: "AI Analysis" },
-            scenario.category || 'Uncategorized'
-          );
-
-          return {
-            query: scenarioText,
-            category: scenario.category || 'Uncategorized',
-            response: { 
-              result: generatedContent, 
-              task: "AI Analysis" 
-            },
-          };
-        } catch (scenarioError) {
-          console.error(`❌ Error processing scenario ${index + 1}:`, scenarioError);
-          
-          return {
-            query: scenario.text || `Scenario ${index + 1}`,
-            category: scenario.category || 'Error',
-            response: { 
-              result: `⚠️ Error: ${scenarioError.message}. Please try again.`, 
-              task: "Error" 
-            },
-          };
-        }
-      })
+    await handleScenarioSubmit(
+      scenarioText,
+      { result: generatedContent, task: "AI Analysis", clarifications: clarificationsWithAnswers },
+      scenario.category || "Uncategorized"
     );
 
-    const validResults = results.filter(result => result !== null);
-    
-    if (validResults.length === 0) {
-      throw new Error("No scenarios could be processed successfully. Please check your input and try again.");
+    const resultObj = {
+      query: scenarioText,
+      category: scenario.category || "Uncategorized",
+      response: {
+        result: generatedContent,
+        task: "AI Analysis",
+        clarifications: clarificationsWithAnswers
+      },
+      timestamp: Date.now() + currentScenarioIndex,
+    };
+
+    pendingResultsRef.current = [...pendingResultsRef.current, resultObj];
+    setPendingResults(pendingResultsRef.current);
+
+    // Move to next scenario or finish
+    const nextIndex = currentScenarioIndex + 1;
+
+    if (nextIndex < pendingScenarios.length) {
+      setCurrentScenarioIndex(nextIndex);
+      await fetchClarificationsFor(pendingScenarios[nextIndex].text.trim());
+      // keep modal open for next scenario
+      return;
     }
 
-    updateGeneratedResults(validResults);
-    updateSimulationInput(filteredScenarios.map((s) => s.text.trim()).join("\n\n"));
+    // Done — close clarify modal and show results
+    const finalResults = pendingResultsRef.current;
+
+    setShowClarifyModal(false);
+    updateGeneratedResults(finalResults);
+    updateSimulationInput(pendingScenarios.map(s => s.text.trim()).join("\n\n"));
     setIsModalOpen(true);
-    
-    console.log('✅ All simulations completed:', validResults);
-    
-    if (validResults.length < filteredScenarios.length) {
-      const failedCount = filteredScenarios.length - validResults.length;
-      console.warn(`⚠️ ${failedCount} scenario(s) failed to process`);
-    }
-  } catch (error) {
-    console.error("❌ Simulation error:", error);
-    setError(`Simulation failed: ${error.message || "Please try again with different scenarios."}`);
+  } catch (e) {
+    console.error("❌ Simulation error:", e);
+    setClarifyError(e.message || "Analysis failed. Please try again.");
   } finally {
-    // ✅ Always turn off loading
     updateSimulationLoading(false);
   }
 };
@@ -741,6 +913,20 @@ const handleSimulate = async () => {
               </div>
             </div>
 
+            {/* Clear Session Button */}
+            <div className="px-6 py-3 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
+              <button
+                onClick={() => {
+                  if (window.confirm("Clear all scenarios and results? This cannot be undone.")) {
+                    clearScenarioSession();
+                  }
+                }}
+                className="w-full bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-medium py-2 px-4 rounded-lg transition-colors text-sm"
+              >
+                🗑️ Clear Session
+              </button>
+            </div>
+
             {/* Simulation Button */}
             <div className="p-6 bg-gradient-to-r from-gray-50 to-white dark:from-gray-800 dark:to-gray-900 border-t border-gray-200 dark:border-gray-700">
               <button
@@ -845,8 +1031,8 @@ const handleSimulate = async () => {
                 </button>
                 <button 
                   onClick={() => {
-                    window.location.href = "/payments";
                     setShowUpgradeModal(false);
+                    setShowUpgradeModalComponent(true);
                   }}
                   className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:from-blue-700 hover:to-purple-700 font-semibold transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg"
                 >
@@ -857,6 +1043,9 @@ const handleSimulate = async () => {
           </div>
         </div>
       )}
+
+      {/* UpgradeModal Component - Shows detailed pricing */}
+      {showUpgradeModalComponent && <UpgradeModal />}
 
       <style>{`
         @keyframes shimmer {
@@ -880,6 +1069,181 @@ const handleSimulate = async () => {
           background-color: rgb(107 114 128);
         }
       `}</style>
+
+{showClarifyModal && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+      {/* Header */}
+      <div className="p-5 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+            Clarify Your Situation
+          </h3>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Step {currentScenarioIndex + 1} of {pendingScenarios.length} • Answer briefly
+            {pendingResultsRef.current.length > 0 && (
+              <span className="ml-2 text-blue-600 dark:text-blue-400 font-medium">
+                • Results so far: {pendingResultsRef.current.length}/{pendingScenarios.length}
+              </span>
+            )}
+          </p>
+          {!clarifyLoading && currentClarifications.length > 0 && (
+            <div className="mt-3">
+              <div className="h-2 w-full rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 transition-all"
+                  style={{
+                    width: `${Math.round(((clarifyStep + 1) / currentClarifications.length) * 100)}%`,
+                  }}
+                />
+              </div>
+              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                {Math.round(((clarifyStep + 1) / currentClarifications.length) * 100)}% complete
+              </div>
+            </div>
+          )}
+        </div>
+        <button
+          onClick={() => {
+            const hasAnyAnswer = Object.values(currentAnswers || {}).some(v => (v || "").trim());
+            if (!hasAnyAnswer) {
+              setShowClarifyModal(false);
+              return;
+            }
+            const ok = window.confirm("Close now? Your answers for this scenario will be lost.");
+            if (ok) setShowClarifyModal(false);
+          }}
+          className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+        >
+          Close
+        </button>
+      </div>
+
+      {/* Body */}
+      <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+        {!clarifyLoading && (
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+            <div className="text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+              Scenario (preview)
+            </div>
+            <div className="text-sm text-slate-700 dark:text-slate-200 line-clamp-3">
+              {(pendingScenarios[currentScenarioIndex]?.text || "").trim()}
+            </div>
+          </div>
+        )}
+        {clarifyLoading ? (
+          <div className="text-slate-600 dark:text-slate-300">
+            Generating clarifying questions...
+          </div>
+        ) : (
+          <>
+            {clarifyError && (
+              <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-sm">
+                {clarifyError}
+              </div>
+            )}
+
+            {(() => {
+              const activeQ = currentClarifications[clarifyStep];
+              return !clarifyLoading && activeQ && (
+                <div className="space-y-2">
+                  <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                    {activeQ.question}
+                  </div>
+
+                  <textarea
+                    value={currentAnswers[activeQ.id] || ""}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (clarifyError) setClarifyError(null);
+                      setCurrentAnswers((prev) => ({ ...prev, [activeQ.id]: val }));
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+
+                        // if last question -> run analysis
+                        if (clarifyStep >= currentClarifications.length - 1) {
+                          runAnalysisForCurrentScenario();
+                          return;
+                        }
+
+                        // otherwise try "Next"
+                        const q = currentClarifications[clarifyStep];
+                        const a = (currentAnswers[q?.id] || "").trim();
+                        if (!a) {
+                          setClarifyError("Please answer before continuing (short is fine).");
+                          return;
+                        }
+                        setClarifyError(null);
+                        setClarifyStep((s) => s + 1);
+                      }
+                    }}
+                    className="w-full min-h-[90px] p-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Type a short answer..."
+                  />
+
+                  <div className="text-xs text-slate-500 dark:text-slate-400">
+                    Question {clarifyStep + 1} of {currentClarifications.length}
+                  </div>
+                </div>
+              );
+            })()}
+          </>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="p-5 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between">
+        <button
+          onClick={() => setClarifyStep((s) => Math.max(0, s - 1))}
+          disabled={clarifyLoading || clarifyStep === 0}
+          className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition disabled:opacity-50"
+        >
+          Back
+        </button>
+
+        <div className="flex items-center gap-2">
+          {currentClarifications.length === 0 ? (
+            <button
+              onClick={runAnalysisForCurrentScenario}
+              disabled={clarifyLoading}
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold hover:from-blue-700 hover:to-indigo-700 transition disabled:opacity-60"
+            >
+              {currentScenarioIndex + 1 < pendingScenarios.length ? "Next Scenario" : "Run Simulation"}
+            </button>
+          ) : clarifyStep < currentClarifications.length - 1 ? (
+            <button
+              onClick={() => {
+                const q = currentClarifications[clarifyStep];
+                const a = (currentAnswers[q?.id] || "").trim();
+                if (!a) {
+                  setClarifyError("Please answer before continuing (short is fine).");
+                  return;
+                }
+                setClarifyError(null);
+                setClarifyStep((s) => s + 1);
+              }}
+              disabled={clarifyLoading}
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold hover:from-blue-700 hover:to-indigo-700 transition disabled:opacity-60"
+            >
+              {clarifyStep === 0 ? "Continue" : "Next"}
+            </button>
+          ) : (
+            <button
+              onClick={runAnalysisForCurrentScenario}
+              disabled={clarifyLoading}
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold hover:from-blue-700 hover:to-indigo-700 transition disabled:opacity-60"
+            >
+              {currentScenarioIndex + 1 < pendingScenarios.length ? "Next Scenario" : "Run Simulation"}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  </div>
+)}
+
     </>
   );
 }

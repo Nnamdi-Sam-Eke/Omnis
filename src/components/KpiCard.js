@@ -108,34 +108,37 @@ const KpiCard = () => {
   };
 
   // Fetch scenarios run today from Firestore
-  const fetchScenariosToday = async () => {
-    if (!user) return;
-    
-    try {
-      const userId = user.uid;
-      const today = new Date();
-      const start = new Date(today.setHours(0, 0, 0, 0));
-      const end = new Date(today.setHours(23, 59, 59, 999));
-      
-      const q = query(
-        collection(db, 'userInteractions'),
-        where('userId', '==', userId),
-        where('action', '==', 'simulate_scenario'),
-        where('timestamp', '>=', Timestamp.fromDate(start)),
-        where('timestamp', '<=', Timestamp.fromDate(end))
-      );
-      
-      const snap = await getDocs(q);
-      setScenariosRunToday(snap.size);
-    } catch (e) {
-      console.error("Error fetching scenarios today:", e);
-      setScenariosRunToday(0);
-    }
-  };
+const fetchScenariosToday = async () => {
+  if (!user) return;
 
-  
-    
-  
+  try {
+    const today = new Date();
+
+    const start = new Date(today);
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date(today);
+    end.setHours(23, 59, 59, 999);
+
+    const q = query(
+      collection(db, "userInteractions", user.uid, "interactions"),
+      where("entryType", "==", "scenario"),
+      where("timestamp", ">=", Timestamp.fromDate(start)),
+      where("timestamp", "<=", Timestamp.fromDate(end))
+    );
+
+    const snap = await getDocs(q);
+    setScenariosRunToday(snap.size);
+  } catch (e) {
+    console.error("Error fetching scenarios today:", e);
+    setScenariosRunToday(0);
+  }
+};
+
+  // Load session count and scenarios today on component mount
+  useEffect(() => {
+  fetchScenariosToday();
+}, [user]);
 
   // Fetch and set data from Firebase
   useEffect(() => {
@@ -168,7 +171,14 @@ const KpiCard = () => {
         (snapshot) => {
           const doc = snapshot.docs[0];
           if (doc && doc.data().lastLogin) {
-            const lastLoginDate = new Date(doc.data().lastLogin.toDate());
+            let lastLoginDate;
+            const storedLoginStr = sessionStorage.getItem('sessionLastLogin');
+            if (storedLoginStr) {
+              lastLoginDate = new Date(storedLoginStr);
+            } else {
+              lastLoginDate = new Date(doc.data().lastLogin.toDate());
+              sessionStorage.setItem('sessionLastLogin', lastLoginDate.toISOString());
+            }
             const now = new Date();
             const diffMins = Math.floor((now - lastLoginDate) / (1000 * 60));
             
@@ -386,7 +396,7 @@ const KpiCard = () => {
               </h3>
               <p className="text-sm md:text-base text-gray-600 dark:text-gray-300 break-words">
                 {loading ? (
-                  <span className="inline-block bg-gray-300 dark:bg-gray-700 rounded w-24 h-4 animate-pulse"></span>
+                  <span className="inline-block bg-gray-300 dark:bg-gray-700 rounded-full w-24 h-4 animate-pulse"></span>
                 ) : (
                   card.value
                 )}

@@ -204,11 +204,11 @@ const AnalyticsPage = () => {
               </div>
               
               <h2 className="text-3xl font-bold bg-gradient-to-r from-red-500 to-pink-600 bg-clip-text text-transparent mb-6">
-                Premium Analytics Required
+                Your Insights Are Ready
               </h2>
               
               <p className="text-lg text-slate-600 dark:text-slate-300 mb-8 leading-relaxed">
-                Unlock comprehensive analytics and insights to track your progress and optimize your learning journey.
+ Upgrade to unlock advanced analytics, simulation trends, and personalized insights over time.
               </p>
               
               <motion.button
@@ -230,6 +230,7 @@ const AnalyticsPage = () => {
             </div>
           </motion.div>
         </div>
+
         {showUpgradeModal && <UpgradeModal onClose={handleCloseModal} />}
       </div>
     );

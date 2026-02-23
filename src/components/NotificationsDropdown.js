@@ -13,7 +13,12 @@ import {
   updateDoc
 } from "firebase/firestore";
 import { useAuth } from "../AuthContext";
-import { generateUserNotifications } from "../components/GenerateUserNotification";
+import { 
+  generateUserNotifications,
+  processFirestoreNotifications,
+  shouldShowNotificationDropdown,
+  handleDropdownShown
+} from "../components/GenerateUserNotification";
 import moment from "moment";
 import { Bell, Dot, X, Minus, Plus, ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -22,59 +27,117 @@ export default function NotificationDropdown() {
   const { user } = useAuth();
   const [latest, setLatest] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const prevNotifRef = useRef([]);
   const dropdownRef = useRef(null);
   const dragging = useRef(false);
   const position = useRef({ x: 0, y: 0 });
   const offset = useRef({ x: 0, y: 0 });
+  const hasCheckedTierChange = useRef(false);
 
   useEffect(() => {
     if (!user?.uid) return;
 
-    const q = query(
+    // Query: Get all tier change notifications from the notifications collection
+    const tierChangeQuery = query(
+      collection(db, "notifications"),
+      where("userId", "==", user.uid),
+      where("isTierChange", "==", true),
+      orderBy("timestamp", "desc")
+    );
+
+    // Query: Get the most recent notification overall
+    const allNotificationsQuery = query(
       collection(db, "notifications"),
       where("userId", "==", user.uid),
       orderBy("timestamp", "desc"),
-      limit(3)
+      limit(1)
     );
 
-    const unsubscribe = onSnapshot(q, async (snapshot) => {
-      const firestoreNotifications = snapshot.docs.map((doc) => ({
+    // Subscribe to tier change notifications (these are persistent)
+    const unsubscribeTierChanges = onSnapshot(tierChangeQuery, async (tierChangeSnapshot) => {
+      const tierChangeNotifications = tierChangeSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
 
-      const userDoc = await getDoc(doc(db, "users", user.uid));
-      const userData = userDoc.exists() ? userDoc.data() : {};
+      // Also subscribe to all notifications for recent activity
+      const unsubscribeAll = onSnapshot(allNotificationsQuery, async (allSnapshot) => {
+        const recentNotifications = allSnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
 
-      const syntheticNotifications = generateUserNotifications(userData, [])
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 2);
+        const userDoc = await getDoc(doc(db, "users", user.uid));
+        const userData = userDoc.exists() ? userDoc.data() : {};
 
-      const combined = [...firestoreNotifications, ...syntheticNotifications];
-      const deduped = Array.from(new Map(combined.map(n => [n.id, n])).values())
-        .sort((a, b) => {
-          const aTime = a.timestamp?.toDate ? a.timestamp.toDate() : a.timestamp;
-          const bTime = b.timestamp?.toDate ? b.timestamp.toDate() : b.timestamp;
-          return bTime - aTime;
-        })
-        .slice(0, 5);
+        const syntheticNotifications = generateUserNotifications(userData, [])
+          .sort((a, b) => b.timestamp - a.timestamp)
+          .slice(0, 1);
 
-      const newNotifExists = deduped.some(
-        (n) => !prevNotifRef.current.find((p) => p.id === n.id)
-      );
-      if (newNotifExists) setIsOpen(true);
+        // Process Firestore notifications properly
+        const processedTierChanges = processFirestoreNotifications(tierChangeNotifications);
+        const processedRecent = processFirestoreNotifications(recentNotifications);
 
-      prevNotifRef.current = deduped;
-      setLatest(deduped);
+        // Combine all notifications: tier changes (persistent) + recent notifications + synthetic
+        const combined = [
+          ...processedTierChanges,
+          ...processedRecent,
+          ...syntheticNotifications
+        ];
 
-      const unreadFirestore = firestoreNotifications.filter(n => !n.read).length;
-      setUnreadCount(unreadFirestore);
+        // Deduplicate by ID and isTierChange marker
+        const deduped = Array.from(
+          new Map(
+            combined.map((n) => {
+              // For tier changes, use a compound key to avoid duplicates
+              if (n.isTierChange) {
+                const tierKey = `tierchange_${n.tierChangeDetails?.from || n.message}_${n.tierChangeDetails?.to || n.message}`;
+                return [tierKey, n];
+              }
+              return [n.id, n];
+            })
+          ).values()
+        )
+          .sort((a, b) => {
+            const aTime = a.timestamp?.toDate ? a.timestamp.toDate() : a.timestamp;
+            const bTime = b.timestamp?.toDate ? b.timestamp.toDate() : b.timestamp;
+            return bTime - aTime;
+          })
+          .slice(0, 1); // Show only the most recent
+
+        // Check if we should show the dropdown
+        const shouldShow = shouldShowNotificationDropdown(deduped);
+
+        // Also check for new notifications
+        const newNotifExists = deduped.some(
+          (n) => !prevNotifRef.current.find((p) => p.id === n.id)
+        );
+
+        if (shouldShow || newNotifExists) {
+          setIsOpen(true);
+          if (shouldShow && !hasCheckedTierChange.current) {
+            hasCheckedTierChange.current = true;
+            handleDropdownShown(deduped);
+          }
+        }
+
+        prevNotifRef.current = deduped;
+        setLatest(deduped);
+
+        // Count unread Firestore notifications (not synthetic)
+        const unreadFirestore = [
+          ...tierChangeNotifications,
+          ...recentNotifications
+        ].filter((n) => !n.read).length;
+        setUnreadCount(unreadFirestore);
+      });
+
+      return () => unsubscribeAll();
     });
 
-    return () => unsubscribe();
+    return () => unsubscribeTierChanges();
   }, [user?.uid]);
 
   const markAsRead = async (id) => {
@@ -136,6 +199,11 @@ export default function NotificationDropdown() {
     setIsOpen(false);
   };
 
+  const handleClose = () => {
+    setIsOpen(false);
+    handleDropdownShown(latest);
+  };
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -166,7 +234,7 @@ export default function NotificationDropdown() {
                   <Bell className="w-4 h-4 text-white" />
                 </div>
                 <h4 className="text-sm font-semibold bg-gradient-to-r from-gray-800 to-gray-600 dark:from-gray-100 dark:to-gray-300 bg-clip-text text-transparent">
-                  Recent Notifications
+                  Recent Notification
                 </h4>
                 {unreadCount > 0 && (
                   <div className="px-2 py-1 bg-gradient-to-r from-red-500 to-rose-500 text-white text-xs font-bold rounded-full min-w-[20px] text-center shadow-lg">
@@ -189,7 +257,7 @@ export default function NotificationDropdown() {
                 <motion.button 
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.95 }}
-                  onClick={() => setIsOpen(false)}
+                  onClick={handleClose}
                   className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 dark:hover:bg-gray-700/50 transition-colors"
                 >
                   <X className="w-4 h-4 text-gray-600 dark:text-gray-300" />
@@ -212,7 +280,7 @@ export default function NotificationDropdown() {
                         <div className="w-16 h-16 bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-600 rounded-full flex items-center justify-center mx-auto mb-4">
                           <Bell className="w-8 h-8 text-gray-400" />
                         </div>
-                        <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">No new notifications</p>
+                        <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">No new notification</p>
                       </div>
                     ) : (
                       <div className="divide-y divide-white/10 dark:divide-gray-700/50">
@@ -225,7 +293,9 @@ export default function NotificationDropdown() {
                             className={`group relative overflow-hidden ${
                               !n.read && n.source !== "synthetic"
                                 ? "bg-gradient-to-r from-blue-50/50 to-purple-50/50 dark:from-blue-900/10 dark:to-purple-900/10"
-                                : ""
+                                : n.isTierChange 
+                                  ? "bg-gradient-to-r from-emerald-50/50 to-green-50/50 dark:from-emerald-900/10 dark:to-green-900/10"
+                                  : ""
                             }`}
                           >
                             <div
@@ -235,7 +305,7 @@ export default function NotificationDropdown() {
                                 setIsOpen(false);
                               }}
                             >
-                              <Link to={n.url || "#"} className="flex items-start gap-3 w-full h-full no-underline">
+                              <Link to={n.url || "/notifications"} className="flex items-start gap-3 w-full h-full no-underline">
                                 {getNotificationIcon(n.type)}
                                 <div className="flex-1 min-w-0">
                                   <div className="font-semibold text-sm text-gray-800 dark:text-gray-100 truncate mb-1">
@@ -251,6 +321,9 @@ export default function NotificationDropdown() {
                                 <div className="flex items-center gap-2 flex-shrink-0">
                                   {!n.read && n.source !== "synthetic" && (
                                     <div className="w-2 h-2 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full shadow-sm animate-pulse"></div>
+                                  )}
+                                  {n.isTierChange && (
+                                    <div className="w-2 h-2 bg-gradient-to-r from-emerald-500 to-green-500 rounded-full shadow-sm"></div>
                                   )}
                                   <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300 transition-colors opacity-0 group-hover:opacity-100" />
                                 </div>

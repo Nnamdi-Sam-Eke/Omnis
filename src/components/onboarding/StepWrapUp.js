@@ -26,8 +26,8 @@ function StepWrapUp({ onboardingData }) {
         );
       }
 
-      // Navigate to dashboard
-      navigate("/dashboard");
+      // Navigate to overview page
+      navigate("/overview");
     } catch (err) {
       console.error("Error finishing onboarding:", err);
       alert("Something went wrong. Please try again.");

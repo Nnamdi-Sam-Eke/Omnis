@@ -1,12 +1,11 @@
 // src/pages/PaymentsPage.js
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, lazy, Suspense } from "react";
 import { useAuth } from "../AuthContext";
 import { doc, onSnapshot, updateDoc } from "firebase/firestore";
 import { db } from "../firebase";
-import SkeletonLoader from "../components/SkeletonLoader";
-import { Suspense } from "react";
-import BillingAndSubscriptionsTab from "./BillingAndSubscriptionsTab";
-import Payments from "../components/Payments";
+
+const BillingAndSubscriptionsTab = lazy(() => import("./BillingAndSubscriptionsTab"));
+const Payments = lazy(() => import("../components/Payments"));
 
 const PaymentsPage = () => {
   const { currentUser } = useAuth();
@@ -82,14 +81,8 @@ const PaymentsPage = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Two-column layout */}
           <div className="flex flex-col lg:flex-row gap-8">
-            {/* Left column: stacked vertically */}
-            <section className="flex flex-col flex-1 space-y-8">
-              <Suspense fallback={<SkeletonLoader height="h-[250px]" />}>
-                <Payments />
-              </Suspense>
-            </section>
 
-            {/* Right column: Billing And Subscriptions */}
+            {/* Left column: Billing And Subscriptions */}
             <section className="flex-1">
               <div className="sticky top-8 group relative overflow-hidden rounded-2xl bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border border-white/20 dark:border-gray-700/50 shadow-xl hover:shadow-2xl transition-all duration-300">
                 <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-cyan-500/5 dark:from-indigo-400/5 dark:to-cyan-400/5" />
@@ -104,11 +97,18 @@ const PaymentsPage = () => {
                       Billing Management
                     </h2>
                   </div>
-                  <Suspense fallback={<SkeletonLoader height="h-[400px]" />}>
+                  <Suspense>
                     <BillingAndSubscriptionsTab />
                   </Suspense>
                 </div>
+                
               </div>
+            </section>
+              {/* Right column: stacked vertically */}
+            <section className="flex flex-col flex-1 space-y-8">
+              <Suspense>
+                <Payments />
+              </Suspense>
             </section>
           </div>
         </div>

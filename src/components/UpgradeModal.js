@@ -70,10 +70,8 @@ export default function UpgradeModal() {
   const [isClosing, setIsClosing] = useState(false);
    // New state for button animation
   const [isClicked, setIsClicked] = useState(false);
-  const [selectedTier, setSelectedTier] = useState("Free");
   const [timeLeft, setTimeLeft] = useState(7 * 24 * 3600 * 1000); // 7 days in ms
   
-
 
   // Simulate splash delay then show modal
   useEffect(() => {
@@ -95,12 +93,10 @@ export default function UpgradeModal() {
 
   
   const handleUpgrade = () => {
-    if (selectedTier === "Free") return;
-
     setIsClicked(true);
 
     setTimeout(() => {
-      navigate("/payments");
+      navigate("/account?tab=Billing");
     }, 200);
   };
 
@@ -119,7 +115,7 @@ export default function UpgradeModal() {
 
   return (
     <>
-      <style jsx>{`
+      <style>{`
         .backdrop {
           position: fixed;
           top: 0;
@@ -149,8 +145,8 @@ export default function UpgradeModal() {
           border-radius: 20px;
           padding: 40px;
           max-width: 1600px;
-          width: 95vw;
-          max-height: 95vh;
+          width: 85%; /* occupy ~80% of viewport width on large screens */
+          max-height: 100vh; /* occupy ~80% of viewport height */
           overflow-y: auto;
           z-index: 1000;
           color: #fff;
@@ -165,11 +161,84 @@ export default function UpgradeModal() {
         }
         
         .tier-card {
-          border: 2px solid transparent;
+          border: 1px solid #333;
+          background: #1a1a1a;
+          border-radius: 12px;
+          padding: 24px;
+          display: flex;
+          flex-direction: column;
+          position: relative;
         }
         
-        .tier-card.selected {
-          border-color: #2a9d8f;
+        .most-popular {
+          position: absolute;
+          top: -12px;
+          left: 50%;
+          transform: translateX(-50%);
+          background: #000;
+          color: #fff;
+          padding: 4px 12px;
+          border-radius: 20px;
+          font-size: 12px;
+          font-weight: bold;
+        }
+        
+        .tier-name {
+          font-size: 18px;
+          font-weight: bold;
+          color: #fff;
+          margin-bottom: 8px;
+          text-align: center;
+        }
+        
+        .tier-price {
+          font-size: 28px;
+          font-weight: bold;
+          color: #fff;
+          margin-bottom: 16px;
+          text-align: center;
+        }
+        
+        .tier-description {
+          list-style-type: disc;
+          padding-left: 20px;
+          color: #aaa;
+          font-size: 14px;
+          flex-grow: 1;
+        }
+        
+        .tier-description li {
+          margin-bottom: 8px;
+        }
+        
+        .tier-button {
+          margin-top: 16px;
+          padding: 12px;
+          border-radius: 8px;
+          font-weight: bold;
+          font-size: 16px;
+          cursor: pointer;
+          transition: all 0.3s ease;
+        }
+        
+        .get-plan {
+          background: #fff;
+          color: #000;
+          border: none;
+        }
+        
+        .current-plan {
+          background: #333;
+          color: #666;
+          border: none;
+          cursor: not-allowed;
+        }
+        
+        .no-charge {
+          text-align: center;
+          color: #666;
+          font-size: 12px;
+          margin-top: 8px;
         }
         
         .tier-open {
@@ -255,12 +324,12 @@ export default function UpgradeModal() {
             flex-direction: column !important;
           }
           
-          .tier-card ul {
+          .tier-description {
             flex-grow: 1 !important;
             margin-bottom: 16px !important;
           }
           
-          .tier-card button {
+          .tier-button {
             margin-top: auto !important;
             flex-shrink: 0 !important;
           }
@@ -287,8 +356,8 @@ export default function UpgradeModal() {
             marginBottom: 24,
           }}
         >
-          <h2 id="upgrade-modal-title" style={{ margin: 0, color: "#f4a261" }}>
-            Choose Your Omnis Plan
+          <h2 id="upgrade-modal-title" style={{ margin: 0, color: "#fff" }}>
+            Subscription Plans
           </h2>
           <button
             onClick={handleClose}
@@ -306,155 +375,74 @@ export default function UpgradeModal() {
           </button>
         </div>
 
-        <p style={{ fontSize: 17, color: "#bbb" }}>
-          Upgrade anytime to unlock unlimited simulations, full analytics, AI-powered features, and more.
+        <p style={{ fontSize: 14, color: "#aaa", marginBottom: 32 }}>
+          Choose the plan that best fits your needs. You can upgrade or downgrade at any time.
         </p>
-
-        {/* Discount info */}
-        {selectedTier !== "Free" && (
-          <>
-            <p
-              style={{
-                fontWeight: "bold",
-                fontSize: 17,
-                color: "#2a9d8f",
-                marginTop: 8,
-              }}
-            >
-              Get <span style={{ color: "#e76f51" }}>20% off</span> if you upgrade within the next 7 days!
-            </p>
-            <p
-              aria-live="polite"
-              style={{
-                fontWeight: "bold",
-                fontSize: 19,
-                color: "#264653",
-                marginTop: -6,
-                marginBottom: 28,
-                letterSpacing: 1.2,
-              }}
-            >
-              Offer expires in: {formatTime(timeLeft)}
-            </p>
-          </>
-        )}
 
         {/* Tier containers */}
         <div
           className="tier-container"
           style={{
             display: "flex",
-            gap: 40,
-            marginTop: 12,
+            gap: 30,
             justifyContent: "center",
             flexWrap: "nowrap",
           }}
         >
           {tiers.map((tier, index) => {
-            const isSelected = selectedTier === tier.name;
-            const isFree = tier.isFree;
+            const isCurrent = tier.isFree;
+            const isMostPopular = tier.name === "Pro";
 
             return (
               <div
                 key={tier.name}
-                role="button"
-                tabIndex={0}
-                aria-pressed={isSelected}
-                onClick={() => setSelectedTier(tier.name)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") setSelectedTier(tier.name);
-                }}
-                className={`tier-card ${isSelected ? "selected" : ""} ${
-                  isClosing ? "tier-close" : "tier-open"
-                }`}
+                className={`tier-card ${isClosing ? "tier-close" : "tier-open"}`}
                 style={{
                   animationDelay: `${index * 0.25 + 0.5}s`,
                   flex: "1 1 0",
-                  maxWidth: 400,
-                  cursor: "pointer",
-                  backgroundColor: isSelected ? "#2a9d8f" : "#222",
-                  borderRadius: 16,
-                  padding: 32,
-                  boxShadow: isSelected ? "0 0 25px #2a9d8f" : "none",
-                  color: isSelected ? "#fff" : "#ccc",
-                  display: "flex",
-                  flexDirection: "column",
+                  maxWidth: 300,
                   userSelect: "none",
-                  minHeight: 520,
+                  minHeight: 400,
                   transition: "background-color 0.3s ease",
                 }}
               >
-                <h3 style={{ marginTop: 0, marginBottom: 12 }}>{tier.name}</h3>
-                <p
-                  className="price"
-                  style={{
-                    fontWeight: "bold",
-                    fontSize: 22,
-                    marginTop: 0,
-                    marginBottom: 18,
-                    color: isSelected ? "#ffd166" : "#fff",
-                  }}
-                >
-                  {tier.price}
-                </p>
-                <ul style={{ flexGrow: 1, paddingLeft: 20, fontSize: 16, lineHeight: 1.6 }}>
+                {isMostPopular && (
+                  <span className="most-popular">Most Popular</span>
+                )}
+                <div className="tier-name">{tier.name} ○</div>
+                <div className="tier-price">{tier.price}</div>
+                <ul className="tier-description">
                   {tier.description.map((desc, i) => (
-                    <li key={i} style={{ marginBottom: 10 }}>
-                      {desc}
-                    </li>
+                    <li key={i}>{desc}</li>
                   ))}
                 </ul>
-                {isFree ? (
+                {isCurrent ? (
                   <button
                     disabled
-                    style={{
-                      marginTop: 22,
-                      padding: "14px 0",
-                      fontWeight: "bold",
-                      borderRadius: 8,
-                      border: "2px solid #555",
-                      backgroundColor: "transparent",
-                      color: "#555",
-                      cursor: "not-allowed",
-                      fontSize: 16,
-                    }}
+                    className="tier-button current-plan"
                     aria-disabled="true"
-                    title="You are currently on the Free plan"
+                    title="You are currently on this plan"
                   >
                     Current Plan
                   </button>
+                ) : tier.name === "Enterprise" ? (
+                  <button
+                    className={`tier-button get-plan ${isClicked ? "btn-clicked" : ""}`}
+                    onClick={handleUpgrade}
+                    aria-label={`Contact for ${tier.name} plan`}
+                  >
+                    Contact us
+                  </button>
                 ) : (
                   <button
-                  className={isClicked ? "btn-clicked" : ""}
+                    className={`tier-button get-plan ${isClicked ? "btn-clicked" : ""}`}
                     onClick={handleUpgrade}
-                    style={{
-                      marginTop: 22,
-                      padding: "16px 0",
-                      fontWeight: "bold",
-                      borderRadius: 8,
-                      border: "none",
-                      backgroundColor: "#e76f51",
-                      color: "#fff",
-                      cursor: "pointer",
-                      fontSize: 17,
-                      transition: "all 0.3s ease",
-                      transform: isClicked ? "scale(1.1)" : "scale(1)",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = "#f4a261";
-                      e.currentTarget.style.transform = "scale(1.05)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = "#e76f51";
-                      e.currentTarget.style.transform = "scale(1)";
-                    }}
-                    aria-label={`Upgrade to ${tier.name} plan`}
-    
-    
+                    aria-label={`Get the ${tier.name} plan`}
                   >
-                    Upgrade
+                    Get the plan →
                   </button>
                 )}
+                <div className="no-charge">No extra hidden charge</div>
               </div>
             );
           })}

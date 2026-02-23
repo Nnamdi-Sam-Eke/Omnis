@@ -11,7 +11,7 @@ const PublicRoute = ({ children }) => {
     return <div>Loading...</div>;
   }
 
-  return !user ? children : <Navigate to="/dashboard" />;
+  return !user ? children : <Navigate to="/overview" />;
 };
 
 export default PublicRoute;

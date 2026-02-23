@@ -2,9 +2,10 @@
 // CLIENT-SIDE GROQ CALL WRAPPER
 // ==============================
 export async function callGroqChat(messages, options = {}) {
-  const backendUrl = process.env.NODE_ENV === 'development'
-    ? 'http://localhost:5000/api/groq-chat'
-    : '/api/groq-chat';
+  const backendUrl =
+    process.env.NODE_ENV === "development"
+      ? "http://localhost:5000/api/groq-chat"
+      : "/api/groq-chat";
 
   const response = await fetch(backendUrl, {
     method: "POST",
@@ -17,155 +18,143 @@ export async function callGroqChat(messages, options = {}) {
     throw new Error(`Backend error: ${response.status} - ${errorText}`);
   }
 
-  const contentType = response.headers.get('content-type');
-  if (!contentType || !contentType.includes('application/json')) {
+  const contentType = response.headers.get("content-type");
+  if (!contentType || !contentType.includes("application/json")) {
     const text = await response.text();
     throw new Error(`Expected JSON, got: ${text.substring(0, 100)}...`);
   }
 
   const result = await response.json();
-  
-  // Extract the actual text content from the API response
-  // Adjust this based on your actual backend response structure
-  let content = result.choices?.[0]?.message?.content || // OpenAI/Groq format
-                result.content || // Simple format
-                result.text || 
-                result.message ||
-                result;
-  
-  // Handle if content is an array (some APIs return [{type: 'text', text: '...'}])
+
+  let content =
+    result.choices?.[0]?.message?.content || // OpenAI/Groq format
+    result.content || // Simple format
+    result.text ||
+    result.message ||
+    result;
+
   if (Array.isArray(content)) {
     content = content
-      .filter(item => item.type === 'text')
-      .map(item => item.text)
-      .join('\n');
+      .filter((item) => item.type === "text")
+      .map((item) => item.text)
+      .join("\n");
   }
-  
-  // Remove <think> tags if present
-  if (typeof content === 'string') {
-    content = content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+  if (typeof content === "string") {
+    content = content.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
   }
 
   return content;
 }
 
 // ==============================
-// FORMAT OMNIS OUTPUT WITH LAYERS & TABLES
+// HELPERS
 // ==============================
-export function formatOmnisOutput(rawText) {
-  if (!rawText) return "";
+function tryExtractJson(text) {
+  if (!text || typeof text !== "string") return null;
 
-  // Split by lines
-  const lines = rawText.split("\n");
+  // First attempt: direct parse
+  try {
+    return JSON.parse(text);
+  } catch (_) {}
 
-  let html = "";
-  let currentLayer = null;
-  let inTable = false;
-  let tableRows = [];
-
-  const flushTable = () => {
-    if (!tableRows.length) return "";
-    let tableHtml = '<table class="omnis-table">';
-    tableRows.forEach((row, idx) => {
-      const cols = row.split("|").map(c => c.trim()).filter(c => c !== "");
-      tableHtml += "<tr>";
-      cols.forEach((col, ci) => {
-        tableHtml += idx === 0
-          ? `<th>${col}</th>`  // first row = header
-          : `<td>${col}</td>`;
-      });
-      tableHtml += "</tr>";
-    });
-    tableRows = [];
-    tableHtml += "</table>";
-    return tableHtml;
-  };
-
-  lines.forEach((line, idx) => {
-    line = line.trim();
-
-    if (!line) return; // skip empty lines
-
-    // Detect layer headers
-    const layerMatch = line.match(/^(🟢|📘|📊).+/);
-    if (layerMatch) {
-      // Close previous layer div if exists
-      if (currentLayer) {
-        html += "</div>";
-      }
-      const layerId = `layer-${idx}`;
-      currentLayer = layerId;
-      // Summary layer expanded by default, others collapsed
-      const expanded = line.startsWith("🟢") ? "block" : "none";
-      html += `
-      <div class="omnis-layer">
-        <div class="omnis-layer-header" onclick="toggleLayer('${layerId}')">
-          ${line} ▼
-        </div>
-        <div id="${layerId}" class="omnis-layer-content" style="display:${expanded}">
-      `;
-      return;
-    }
-
-    // Detect table row
-    if (line.startsWith("|")) {
-      inTable = true;
-      tableRows.push(line);
-      return;
-    } else if (inTable) {
-      // flush table before processing non-table line
-      html += flushTable();
-      inTable = false;
-    }
-
-    // Detect headings marked with **Heading**
-    const headingMatch = line.match(/^\*\*(.+?)\*\*$/);
-    if (headingMatch) {
-      html += `<div class="omnis-heading">${headingMatch[1]}</div>`;
-      return;
-    }
-
-    // Detect bullets (- or *)
-    const bulletMatch = line.match(/^[-*]\s+(.+)/);
-    if (bulletMatch) {
-      html += `<div class="omnis-bullet">• ${bulletMatch[1]}</div>`;
-      return;
-    }
-
-    // Otherwise, regular paragraph
-    html += `<div class="omnis-paragraph">${line}</div>`;
-  });
-
-  // flush any remaining table
-  html += flushTable();
-
-  // close last layer if open
-  if (currentLayer) html += "</div>";
-
-  return html;
-}
-
-// ==============================
-// TOGGLE FUNCTION FOR COLLAPSIBLE LAYERS
-// ==============================
-export function toggleLayer(layerId) {
-  const content = document.getElementById(layerId);
-  if (!content) return;
-  const header = content.previousElementSibling;
-  if (content.style.display === "none") {
-    content.style.display = "block";
-    if (header.textContent.endsWith("▼")) header.textContent = header.textContent.replace("▼","▲");
-  } else {
-    content.style.display = "none";
-    if (header.textContent.endsWith("▲")) header.textContent = header.textContent.replace("▲","▼");
+  // Second attempt: extract JSON block
+  const firstBrace = text.indexOf("{");
+  const lastBrace = text.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    const candidate = text.slice(firstBrace, lastBrace + 1);
+    try {
+      return JSON.parse(candidate);
+    } catch (_) {}
   }
+
+  return null;
 }
 
+function normalizeClarifications(parsed) {
+  // Expected:
+  // { clarifications: [ {id:"q1", question:"..."}, ... ] }
+  const arr = parsed?.clarifications;
+  if (!Array.isArray(arr)) return [];
+
+  return arr
+    .map((q, idx) => {
+      const id = String(q?.id || `q${idx + 1}`);
+      const question = String(q?.question || "").trim();
+      if (!question) return null;
+      return { id, question };
+    })
+    .filter(Boolean)
+    .slice(0, 5);
+}
 
 // ==============================
-// GENERATE OMNIS CONTENT (STEP 1) - CONCISE VERSION
+// 1) CLARIFYING QUESTIONS (NEW)
 // ==============================
-export async function generateOmnisContent(scenarioText) {
+export async function generateOmnisClarifications(scenarioText) {
+  const systemPrompt = `
+You are the clarification layer of a decision simulation system.
+
+Your role is NOT to give advice.
+Your role is to reduce uncertainty before simulation.
+
+Read the user's scenario and determine what critical unknowns would
+change the predicted outcome.
+
+Generate 3 to 5 concise clarification questions.
+
+Rules:
+- Ask only questions that materially affect consequences.
+- Do NOT ask for unnecessary background details.
+- Do NOT repeat what is already clear.
+- Avoid generic questions (e.g., "tell me more").
+- Each question must target a different uncertainty dimension.
+- Neutral tone. No judgment. No advice.
+
+Output format: JSON only
+
+{
+  "clarifications": [
+    { "id": "q1", "question": "..." },
+    { "id": "q2", "question": "..." }
+  ]
+}
+`.trim();
+
+  const userPrompt = `
+Scenario:
+${scenarioText}
+
+Return ONLY valid JSON in the required format.
+`.trim();
+
+  const messages = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userPrompt },
+  ];
+
+  const raw = await callGroqChat(messages);
+
+  const parsed = tryExtractJson(raw);
+  const normalized = normalizeClarifications(parsed);
+
+  // Fallback: if model didn't comply, return a minimal safe set
+  if (!normalized.length) {
+    return [
+      { id: "q1", question: "What outcome matters most to you here (success definition)?" },
+      { id: "q2", question: "What is your main constraint right now (money/time/energy/authority)?" },
+      { id: "q3", question: "What is your time horizon for this decision (days/weeks/months)?" },
+    ];
+  }
+
+  return normalized;
+}
+
+// ==============================
+// 2) GENERATE OMNIS CONTENT (STEP 1) - CONCISE VERSION
+// UPDATED: Accept clarifications
+// ==============================
+export async function generateOmnisContent(scenarioText, clarifications = null) {
   const systemPrompt = `
 You are Omnis – a digital-twin reasoning engine.
 
@@ -188,10 +177,38 @@ Tone & style:
 - Crisp, direct, minimal
 - Use strong verbs
 - No fluff or repetition
-`;
+`.trim();
+
+  // Clarifications formatting block
+  const clarificationBlock = (() => {
+    if (!clarifications) return "";
+    // clarifications can be array OR object map
+    let pairs = [];
+    if (Array.isArray(clarifications)) {
+      pairs = clarifications
+        .map((c, i) => {
+          const q = (c?.question || `Clarification ${i + 1}`).trim();
+          const a = (c?.answer || "").trim();
+          if (!a) return null;
+          return `- ${q}\n  Answer: ${a}`;
+        })
+        .filter(Boolean);
+    } else if (typeof clarifications === "object") {
+      pairs = Object.entries(clarifications)
+        .map(([q, a]) => `- ${String(q).trim()}\n  Answer: ${String(a).trim()}`)
+        .filter(Boolean);
+    }
+    if (!pairs.length) return "";
+    return `
+Clarifications (higher priority than assumptions):
+${pairs.join("\n")}
+`.trim();
+  })();
 
   const userPrompt = `
 Analyze this scenario with a BRIEF overview. Keep everything concise.
+
+${clarificationBlock ? `${clarificationBlock}\n\n` : ""}
 
 Required structure:
 
@@ -216,8 +233,11 @@ One concrete action to take in the next 48 hours.
 Scenario:
 ${scenarioText}
 
-IMPORTANT: Keep this BRIEF. Detailed causal analysis comes later. Each section should be scannable in 5 seconds.
-`;
+IMPORTANT:
+- Keep this BRIEF.
+- If clarifications exist, they override assumptions.
+- Each section should be scannable in 5 seconds.
+`.trim();
 
   const messages = [
     { role: "system", content: systemPrompt },
@@ -227,11 +247,11 @@ IMPORTANT: Keep this BRIEF. Detailed causal analysis comes later. Each section s
   return await callGroqChat(messages);
 }
 
-
 // ==============================
-// EXPAND OMNIS TEXT (STEP 2) - DEEP DIVE VERSION
+// 3) EXPAND OMNIS TEXT (STEP 2) - DEEP DIVE VERSION
+// OPTIONAL: pass clarifications if you want later
 // ==============================
-export async function expandOmnisText(previousOutput) {
+export async function expandOmnisText(previousOutput, clarifications = null) {
   const systemPrompt = `
 You are Omnis – a decision intelligence engine.
 
@@ -239,7 +259,7 @@ Your task is to expand a brief scenario overview into a layered analysis:
 
 1️⃣ Summary Layer – quick scan (2–3 sentences per section)
 2️⃣ Context Layer – causal and emotional context (4–6 sentences)
-3️⃣ Optional Deep Layer – full causal depth, tactical steps, red flags (only if user clicks "Expand More")
+3️⃣ Deep Layer – full causal depth, tactical steps, red flags
 
 Key rules:
 - Keep output readable and scannable.
@@ -253,16 +273,40 @@ Tone:
 - Thoughtful, reverent, advisory
 - Supportive, not controlling
 - Encourage clarity and reflection
-`;
+`.trim();
+
+  const clarificationNote = (() => {
+    if (!clarifications) return "";
+    // same flexibility as generateOmnisContent
+    let pairs = [];
+    if (Array.isArray(clarifications)) {
+      pairs = clarifications
+        .map((c, i) => {
+          const q = (c?.question || `Clarification ${i + 1}`).trim();
+          const a = (c?.answer || "").trim();
+          if (!a) return null;
+          return `- ${q}\n  Answer: ${a}`;
+        })
+        .filter(Boolean);
+    } else if (typeof clarifications === "object") {
+      pairs = Object.entries(clarifications)
+        .map(([q, a]) => `- ${String(q).trim()}\n  Answer: ${String(a).trim()}`)
+        .filter(Boolean);
+    }
+    if (!pairs.length) return "";
+    return `
+Clarifications provided by the user (override assumptions):
+${pairs.join("\n")}
+`.trim();
+  })();
 
   const userPrompt = `
 Original brief overview:
-
 ${previousOutput}
 
----
+${clarificationNote ? `\n\n${clarificationNote}\n\n` : "\n\n"}
 
-Transform this into a **layered analysis** with the following structure:
+Transform this into a layered analysis with the following structure:
 
 **Summary Layer** (default view)
 - Current State: 2–3 sentences highlighting core pressures
@@ -288,11 +332,10 @@ Transform this into a **layered analysis** with the following structure:
 
 Guidelines:
 - Present each layer progressively; users can stop at any layer.
-- Keep all text **scannable with bullet points and headings**.
+- Keep all text scannable with bullet points and headings.
 - Avoid overwhelming the user at first glance.
-- Highlight **purpose alignment** where relevant (faith, autonomy, well-being, stewardship).
-- Use qualitative descriptors rather than precise percentages or forecasts.
-`;
+- Use clarifications if present; do not contradict them.
+`.trim();
 
   const messages = [
     { role: "system", content: systemPrompt },

@@ -63,7 +63,7 @@ const Header = ({
     location.pathname
       .split('/')
       .filter(Boolean)
-      .join(' ') || 'Dashboard'
+      .join(' ') || 'Overview'
   );
 
   return (

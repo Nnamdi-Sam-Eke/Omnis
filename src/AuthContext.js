@@ -46,7 +46,7 @@ export function AuthProvider({ children }) {
   // Throttled login tracking - only update once per 5 minutes
   const trackLogin = async (userId) => {
     const now = Date.now();
-    const THROTTLE_MS = 5 * 60 * 1000; // 5 minutes
+    const THROTTLE_MS = 8 * 60 * 1000; // 8 minutes
     
     if (now - lastLoginUpdateRef.current < THROTTLE_MS) {
       console.log('⏭️ Login tracking throttled');

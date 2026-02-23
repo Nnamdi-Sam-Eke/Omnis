@@ -53,24 +53,7 @@ const AuthForm = () => {
     }
   };
 
-  // const handleGoogleSignIn = async () => {
-  //   setIsSubmitting(true);
-  //   try {
-  //     const provider = new GoogleAuthProvider();
-  //     const result = await signInWithPopup(getAuth(), provider);
-  //     const user = result.user;
-      
-  //     const userRef = doc(db, "users", user.uid);
-  //     await updateDoc(userRef, { lastLogin: serverTimestamp() });
-      
-  //     navigate("/dashboard");
-  //   } catch (err) {
-  //     console.error("Google Sign-In Error:", err);
-  //     setError(err.message || "Failed to sign in with Google");
-  //     setIsSubmitting(false);
-  //   }
-  // };
-
+ 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -91,7 +74,7 @@ const AuthForm = () => {
           await fetchUserData();
         }
       }
-      navigate("/dashboard");
+      navigate("/overview");
     } catch (err) {
       console.error("Auth Error:", err);
       setError(err.message || "An unexpected error occurred");

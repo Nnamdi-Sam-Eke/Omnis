@@ -63,10 +63,40 @@ export default function NotificationsPage() {
 
         const syntheticNotifications = generateUserNotifications(userData, sessionDocs).map(notif => ({
           ...notif,
-          read: true // Mark all synthetic notifications as read by default
+          // Don't mark tier change notifications as read - they're important!
+          read: notif.isTierChange ? false : true
         }));
-        const combined = [...firestoreNotifications, ...syntheticNotifications];
-        const deduped = Array.from(new Map(combined.map(n => [n.id, n])).values());
+        const combined = [...firestoreNotifications, ...syntheticNotifications];        
+        // Robust dedupe: detect tier-change notifications by from/to and prefer persisted (firestore) records
+        const dedupMap = new Map();
+        const getTierKey = (n) => {
+          if (!n) return null;
+          if (n.isTierChange) {
+            // Try structured details first
+            const from = n.tierChangeDetails?.from || (n.message && (n.message.match(/from\s+([^\s]+)\s+to\s+(.+)/i) || [])[1]) || n.from || '';
+            const to = n.tierChangeDetails?.to || (n.message && (n.message.match(/from\s+([^\s]+)\s+to\s+(.+)/i) || [])[2]) || n.to || '';
+            return `tierChange_${String(from).toLowerCase()}_${String(to).toLowerCase()}`;
+          }
+          const time = n.timestamp?.toDate ? n.timestamp.toDate().getTime() : (n.timestamp instanceof Date ? n.timestamp.getTime() : new Date(n.timestamp).getTime());
+          return `${(n.activityType || n.title || 'unknown')}_${time}`;
+        };
+        combined.forEach((n) => {
+          const key = getTierKey(n);
+          if (!key) return;
+          if (!dedupMap.has(key)) {
+            dedupMap.set(key, n);
+            return;
+          }
+          // If duplicate exists, prefer the persisted firestore notification (source !== 'synthetic')
+          const existing = dedupMap.get(key);
+          const existingIsSynthetic = existing.source === 'synthetic' || existing.source == null && existing.id && existing.id === (existing.id || '').toString().startsWith('plan');
+          const incomingIsSynthetic = n.source === 'synthetic' || n.source == null && n.id && n.id === (n.id || '').toString().startsWith('plan');
+          if (existingIsSynthetic && !incomingIsSynthetic) {
+            dedupMap.set(key, n);
+          }
+        });
+        const deduped = Array.from(dedupMap.values());
+        setNotifications(deduped.sort((a, b) => b.timestamp - a.timestamp));
 
         setNotifications(deduped.sort((a, b) => b.timestamp - a.timestamp));
         setLastVisible(snapshot.docs[snapshot.docs.length - 1]);

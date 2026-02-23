@@ -2,9 +2,17 @@
 import React, { useEffect, useState } from "react";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { useAuth } from "../AuthContext";
+import { 
+  recordTierChange, 
+  checkAndRecordTierChange,
+  getTierChangeNotifications 
+} from "../services/tierChangeService";
+import { getUserTier, updateUserTier } from "../services/firestoreService";
 
 const SubscriptionInfo = ({ userDetails, discountActive }) => {
   const [loading, setLoading] = useState(true);
+  const [upgradeInProgress, setUpgradeInProgress] = useState(false);
+  const [downgradeInProgress, setDowngradeInProgress] = useState(false);
   const functions = getFunctions();
   const { user } = useAuth();
 
@@ -25,20 +33,132 @@ const SubscriptionInfo = ({ userDetails, discountActive }) => {
   };
 
   // ✅ Main Stripe API-based upgrade handler
-  const handleUpgrade = async (priceId) => {
-    if (!user) return alert("User not logged in.");
-    const res = await fetch("/api/create-checkout-session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: user.uid, email: user.email, priceId })
-    });
-
-    const data = await res.json();
-    if (data?.url) {
-      window.location.href = data.url;
-    } else {
-      alert("Failed to initiate upgrade session.");
+  const handleUpgrade = async (targetTier, priceId) => {
+    if (!user) {
+      alert("User not logged in.");
+      return;
     }
+
+    setUpgradeInProgress(true);
+
+    try {
+      // Get the current tier before upgrade
+      const currentTier = user?.tier || "Free";
+
+      // Initiate Stripe checkout
+      const res = await fetch("/api/create-checkout-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.uid, email: user.email, priceId })
+      });
+
+      const data = await res.json();
+      
+      if (data?.url) {
+        // Record the pending tier change BEFORE redirection
+        // This ensures the notification is created even if Stripe flow takes time
+        if (currentTier !== targetTier) {
+          const tierRank = { "Free": 0, "Pro": 1, "Enterprise": 2 };
+          const isUpgrade = (tierRank[targetTier] || 0) > (tierRank[currentTier] || 0);
+          const changeType = isUpgrade ? "upgrade" : "downgrade";
+
+          await recordTierChange(
+            user.uid,
+            currentTier,
+            targetTier,
+            changeType
+          );
+
+          // Also update the user's tier in Firestore
+          await updateUserTier(user.uid, targetTier);
+
+          console.log(
+            `✅ Tier change initiated: ${currentTier} → ${targetTier} (${changeType})`
+          );
+        }
+
+        // Redirect to Stripe checkout
+        window.location.href = data.url;
+      } else {
+        alert("Failed to initiate upgrade session.");
+        setUpgradeInProgress(false);
+      }
+    } catch (error) {
+      console.error("❌ Error during upgrade:", error);
+      alert("Failed to process upgrade. Please try again.");
+      setUpgradeInProgress(false);
+    }
+  };
+
+  // ✅ Handle Downgrade functionality
+  const handleDowngrade = async (targetTier) => {
+    if (!user) {
+      alert("User not logged in.");
+      return;
+    }
+
+    // Confirm downgrade action
+    const confirmed = window.confirm(
+      `Are you sure you want to downgrade to ${targetTier} Plan? You may lose access to some premium features.`
+    );
+
+    if (!confirmed) return;
+
+    setDowngradeInProgress(true);
+
+    try {
+      const currentTier = user?.tier || "Free";
+      const tierRank = { "Free": 0, "Pro": 1, "Enterprise": 2 };
+
+      // Verify it's actually a downgrade
+      if ((tierRank[targetTier] || 0) >= (tierRank[currentTier] || 0)) {
+        alert("This is not a downgrade. Please select a lower tier.");
+        setDowngradeInProgress(false);
+        return;
+      }
+
+      // Record the tier downgrade
+      await recordTierChange(
+        user.uid,
+        currentTier,
+        targetTier,
+        "downgrade"
+      );
+
+      // Update user's tier in Firestore
+      await updateUserTier(user.uid, targetTier);
+
+      console.log(`✅ Downgrade recorded: ${currentTier} → ${targetTier}`);
+
+      // Show success message
+      alert(`Successfully downgraded to ${targetTier} Plan`);
+
+      // Note: In a real application, you might also need to handle:
+      // - Canceling any scheduled upgrades
+      // - Updating subscription details with your backend
+      // - Triggering email notification
+      setDowngradeInProgress(false);
+    } catch (error) {
+      console.error("❌ Error during downgrade:", error);
+      alert("Failed to process downgrade. Please try again.");
+      setDowngradeInProgress(false);
+    }
+  };
+
+  // ✅ Handle Cancel Subscription
+  const handleCancelSubscription = async () => {
+    if (!user) {
+      alert("User not logged in.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Are you sure you want to cancel your subscription? You will be downgraded to the Free plan."
+    );
+
+    if (!confirmed) return;
+
+    await handleDowngrade("Free");
   };
 
   if (loading) {
@@ -81,19 +201,25 @@ const SubscriptionInfo = ({ userDetails, discountActive }) => {
 
         <div className="flex flex-col sm:flex-row gap-3">
           <button
-            onClick={() => handleUpgrade(userDetails?.subscription?.premiumPriceId || 'price_pro_123')}
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+            onClick={() => handleUpgrade("Pro", userDetails?.subscription?.premiumPriceId || 'price_pro_123')}
+            disabled={upgradeInProgress || user?.tier === "Pro" || user?.tier === "Enterprise"}
+            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium"
           >
-            Upgrade to Pro
+            {upgradeInProgress ? "Processing..." : "Upgrade to Pro"}
           </button>
           <button
-            onClick={() => handleUpgrade(userDetails?.subscription?.basicPriceId || 'price_ent_123')}
-            className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+            onClick={() => handleUpgrade("Enterprise", userDetails?.subscription?.basicPriceId || 'price_ent_123')}
+            disabled={upgradeInProgress || user?.tier === "Enterprise"}
+            className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium"
           >
-            Upgrade to Enterprise
+            {upgradeInProgress ? "Processing..." : "Upgrade to Enterprise"}
           </button>
-          <button className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors font-medium">
-            Cancel Subscription
+          <button 
+            onClick={handleCancelSubscription}
+            disabled={downgradeInProgress || user?.tier === "Free"}
+            className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium"
+          >
+            {downgradeInProgress ? "Processing..." : "Cancel Subscription"}
           </button>
         </div>
       </div>

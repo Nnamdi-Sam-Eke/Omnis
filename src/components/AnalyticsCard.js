@@ -1,4 +1,4 @@
-import React, { useEffect, useState, forwardRef } from 'react';
+import React, { useEffect, useState, forwardRef, useRef } from 'react';
 import {
   Chart as ChartJS,
   BarElement,
@@ -82,22 +82,28 @@ const UptimeChart = forwardRef(({ onRendered }, ref) => {
   const db = getFirestore();
   const auth = getAuth();
 
+  const onRenderedRef = useRef(onRendered);
+
+  useEffect(() => {
+    onRenderedRef.current = onRendered;
+  }, [onRendered]);
+
   useEffect(() => {
     if (isOpen) {
       setIsLoading(true);
       const t = setTimeout(() => {
         setIsLoading(false);
-        onRendered?.();
+        onRenderedRef.current?.();
       }, 500);
       return () => clearTimeout(t);
     }
-  }, [isOpen, onRendered]);
+  }, [isOpen]);
 
   useEffect(() => {
-    if (!loading && isOpen && filteredSessions.length > 0 && onRendered) {
-      onRendered();
+    if (!loading && isOpen && filteredSessions.length > 0 && onRenderedRef.current) {
+      onRenderedRef.current();
     }
-  }, [loading, isOpen, filteredSessions, chartType, view, onRendered]);
+  }, [loading, isOpen, filteredSessions, chartType, view]);
 
   // Format duration from seconds to "Xh Ym" format
   const formatDuration = (hoursFloat) => {

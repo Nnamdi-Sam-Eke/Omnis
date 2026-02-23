@@ -62,3 +62,34 @@ export const saveSocialLinks = async (userId, socials) => {
     console.error("❌ Error updating social links:", error);
   }
 };
+
+// ✅ Get User Current Tier
+export const getUserTier = async (userId) => {
+  if (!userId) return null;
+
+  try {
+    const userRef = doc(db, "users", userId);
+    const userSnap = await getDoc(userRef);
+
+    return userSnap.exists() ? userSnap.data().tier || "Free" : "Free";
+  } catch (error) {
+    console.error("❌ Error fetching user tier:", error);
+    return "Free";
+  }
+};
+
+// ✅ Update User Tier
+export const updateUserTier = async (userId, newTier) => {
+  if (!userId || !newTier) return;
+
+  try {
+    const userRef = doc(db, "users", userId);
+    await updateDoc(userRef, { 
+      tier: newTier,
+      lastTierUpdateTime: new Date().toISOString()
+    });
+    console.log("✅ User tier updated to:", newTier);
+  } catch (error) {
+    console.error("❌ Error updating user tier:", error);
+  }
+};

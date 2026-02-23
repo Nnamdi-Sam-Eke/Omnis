@@ -1,20 +1,31 @@
 import React, { useEffect, useState } from 'react';
 import { getAuth, updatePassword, signOut, deleteUser, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { doc, getDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase'; // Adjust path to your firebase config
 import { useAuth } from '../AuthContext';
-import { Eye, EyeOff, User, Shield, Monitor, AlertTriangle, Edit3, Clock, Smartphone } from "lucide-react";
+import { Eye, EyeOff, User, Shield, Monitor, AlertTriangle, Edit3, Clock, Smartphone, CreditCard } from "lucide-react";
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import toast, { Toaster } from 'react-hot-toast';
+import PaymentsPage from './PaymentsPage';
+
 
 const AccountPage = () => {
-  const [activeTab, setActiveTab] = useState('Summary');
+  const [searchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState(tabParam || 'Summary');
   const { user } = useAuth(); // Authenticated Firebase user
   const [userData, setUserData] = useState(null);
   const [newPassword, setNewPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+
+  // Update activeTab when URL query parameter changes
+  useEffect(() => {
+    if (tabParam) {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
   const [currentPassword, setCurrentPassword] = useState('');
   const [reauthenticating, setReauthenticating] = useState(false);
   const [showUserId, setShowUserId] = useState(false);
@@ -61,7 +72,14 @@ const AccountPage = () => {
       if (!snapshot.empty) {
         const doc = snapshot.docs[0];
         if (doc && doc.data().lastLogin) {
-          const lastLoginDate = new Date(doc.data().lastLogin.toDate());
+          let lastLoginDate;
+          const storedLoginStr = sessionStorage.getItem('sessionLastLogin');
+          if (storedLoginStr) {
+            lastLoginDate = new Date(storedLoginStr);
+          } else {
+            lastLoginDate = new Date(doc.data().lastLogin.toDate());
+            sessionStorage.setItem('sessionLastLogin', lastLoginDate.toISOString());
+          }
           const now = new Date();
           const diffMins = Math.floor((now - lastLoginDate) / (1000 * 60));
           if (diffMins < 60) setLastActivity(`${diffMins} mins ago`);
@@ -106,12 +124,14 @@ const AccountPage = () => {
 
       if (actionToConfirm === 'signout') {
         await signOut(auth);
+        sessionStorage.removeItem('sessionLastLogin');
         toast.success('Signed out from this session.');
         window.location.reload();
       }
       else if (actionToConfirm === 'signout_all') {
         await deleteDoc(sessionRef); // Removes session from Firestore
         await signOut(auth);
+        sessionStorage.removeItem('sessionLastLogin');
         toast.success('Signed out from all sessions.');
         window.location.reload();
       }
@@ -128,6 +148,7 @@ const AccountPage = () => {
         await deleteDoc(sessionRef);
         await deleteUser(user);
 
+        sessionStorage.removeItem('sessionLastLogin');
         toast.success('Your account has been deleted.');
         await signOut(auth);
   } else {
@@ -178,6 +199,7 @@ const AccountPage = () => {
 
   const tabs = [
     { id: 'Summary', label: 'Summary', icon: User },
+    { id: 'Billing', label: 'Billing', icon: CreditCard },
     { id: 'Security', label: 'Security', icon: Shield },
     { id: 'Sessions', label: 'Sessions', icon: Monitor },
     { id: 'Danger Zone', label: 'Danger Zone', icon: AlertTriangle }
@@ -319,6 +341,20 @@ const AccountPage = () => {
                   Edit Profile
                 </button>
               </div>
+            </div>
+          )}
+
+           {/* Billings Tab */}
+          {activeTab === 'Billing' && (
+            <div className="p-8">
+              <div className="flex items-center gap-3 mb-8">
+                <div className="p-3 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full">
+                  <Monitor className="text-white" size={24} />
+                </div>
+                <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">BIlling</h2>
+              </div>
+              
+              <PaymentsPage />
             </div>
           )}
 

@@ -10,18 +10,6 @@ const dummyInsights = [
 
 const NarrativePanel = forwardRef((props, ref) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (isOpen) {
-      setLoading(true);
-      const timer = setTimeout(() => {
-        setLoading(false);
-        
-      }, 1200); // simulate shorter loading time
-      return () => clearTimeout(timer);
-    }
-  }, [isOpen]);
 
   return (
     <div
@@ -50,67 +38,51 @@ const NarrativePanel = forwardRef((props, ref) => {
       </div>
 
       <div
-        className={`transition-all duration-500 ease-in-out overflow-y-auto ${
+        className={`transition-all duration-500 ease-in-out overflow-hidden ${
           isOpen ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'
         }`}
       >
-        <div className="transition-all duration-300 bg-gradient-to-br from-white via-orange-25/50 to-amber-25/30 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 rounded-2xl border border-orange-100/50 dark:border-orange-500/40 shadow-inner dark:shadow-orange-900/20 p-6">
-          {loading ? (
-            <div className="space-y-6">
-              <div className="w-full h-full relative overflow-hidden rounded-xl p-4">
-                <div className="absolute inset-0 bg-gradient-to-r from-orange-100 via-amber-50 to-orange-100 dark:from-slate-700 dark:via-slate-600 dark:to-slate-700 animate-pulse rounded-xl" />
-                <div
-                  className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent dark:via-orange-400/20 animate-shimmer rounded-xl"
-                  style={{
-                    backgroundImage: 'linear-gradient(90deg, transparent, rgba(251, 146, 60, 0.1), transparent)',
-                    backgroundSize: '200% 100%',
-                    animation: 'shimmer 2s ease-in-out infinite',
-                  }}
-                />
-              </div>
-              <div className="animate-pulse space-y-4 relative z-10">
-                <div className="h-4 w-3/4 bg-gradient-to-r from-orange-200 to-amber-200 dark:from-slate-600 dark:to-slate-500 dark:border-l-2 dark:border-orange-400/50 rounded-lg" />
-                <div className="h-4 w-4/5 bg-gradient-to-r from-amber-200 to-yellow-200 dark:from-slate-600 dark:to-slate-500 dark:border-l-2 dark:border-orange-400/50 rounded-lg" />
-                <div className="h-4 w-2/3 bg-gradient-to-r from-yellow-200 to-orange-200 dark:from-slate-600 dark:to-slate-500 dark:border-l-2 dark:border-orange-400/50 rounded-lg" />
-                <div className="h-4 w-1/2 bg-gradient-to-r from-orange-200 to-amber-200 dark:from-slate-600 dark:to-slate-500 dark:border-l-2 dark:border-orange-400/50 rounded-lg" />
+        <div className="transition-all duration-300 bg-gradient-to-br from-white via-orange-25/50 to-amber-25/30 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 rounded-2xl border border-orange-100/50 dark:border-orange-500/40 shadow-inner dark:shadow-orange-900/20 p-6 relative overflow-hidden min-h-[350px]">
+          {/* Blurred Content Background */}
+          <div className="relative blur-sm opacity-30 pointer-events-none select-none">
+            <p className="text-orange-600 dark:text-orange-300 mb-6 text-lg font-medium">
+              Here's what I've learned about your decisions...
+            </p>
+
+            <ul className="space-y-6">
+              {dummyInsights.map((insight, index) => (
+                <li key={index} className="flex items-start gap-4 p-4 rounded-xl bg-gradient-to-r from-white/50 to-orange-25/50 dark:from-slate-700/50 dark:to-slate-600/50 dark:border-l-4 dark:border-orange-400/60 border border-orange-100/20 dark:border-orange-500/30">
+                  <div className="flex items-center justify-center w-12 h-12 bg-gradient-to-br from-orange-50 to-amber-100 dark:from-slate-600 dark:to-slate-500 dark:border dark:border-orange-400/50 rounded-xl shadow-lg dark:shadow-orange-500/10">
+                    <span className="text-2xl">{insight.icon}</span>
+                  </div>
+                  <span className="text-orange-700 dark:text-orange-200 text-base font-medium leading-relaxed flex-1">{insight.text}</span>
+                </li>
+              ))}
+            </ul>
+
+            <div className="mt-8 p-4 bg-gradient-to-r from-orange-25/50 to-amber-25/50 dark:from-slate-700/30 dark:to-slate-600/30 dark:border-l-4 dark:border-orange-400/50 rounded-xl border border-orange-100/20 dark:border-orange-500/30">
+              <div className="text-sm text-orange-500 dark:text-orange-300 font-medium">
+                *Omnis AI-generated summaries based on your usage patterns.
               </div>
             </div>
-          ) : (
-            <>
-              <p className="text-orange-600 dark:text-orange-300 mb-6 text-lg font-medium">
-                Here's what I've learned about your decisions...
-              </p>
+          </div>
 
-              <ul className="space-y-6">
-                {dummyInsights.map((insight, index) => (
-                  <li key={index} className="flex items-start gap-4 p-4 rounded-xl bg-gradient-to-r from-white/50 to-orange-25/50 dark:from-slate-700/50 dark:to-slate-600/50 dark:border-l-4 dark:border-orange-400/60 border border-orange-100/20 dark:border-orange-500/30 hover:from-orange-50/40 hover:to-amber-50/40 dark:hover:from-slate-600/60 dark:hover:to-slate-500/60 dark:hover:border-orange-400/80 transition-all duration-300 group">
-                    <div className="flex items-center justify-center w-12 h-12 bg-gradient-to-br from-orange-50 to-amber-100 dark:from-slate-600 dark:to-slate-500 dark:border dark:border-orange-400/50 rounded-xl group-hover:from-orange-100 group-hover:to-amber-150 dark:group-hover:from-slate-500 dark:group-hover:to-slate-400 dark:group-hover:border-orange-400/70 transition-all duration-300 shadow-lg dark:shadow-orange-500/10">
-                      <span className="text-2xl">{insight.icon}</span>
-                    </div>
-                    <span className="text-orange-700 dark:text-orange-200 text-base font-medium leading-relaxed flex-1">{insight.text}</span>
-                  </li>
-                ))}
-              </ul>
-
-              <div className="mt-8 p-4 bg-gradient-to-r from-orange-25/50 to-amber-25/50 dark:from-slate-700/30 dark:to-slate-600/30 dark:border-l-4 dark:border-orange-400/50 rounded-xl border border-orange-100/20 dark:border-orange-500/30">
-                <div className="text-sm text-orange-500 dark:text-orange-300 font-medium">
-                  *Omnis AI-generated summaries based on your usage patterns.
-                </div>
+          {/* Overlay Message */}
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="text-center px-6 py-8 bg-white/90 dark:bg-slate-800/90 backdrop-blur-md rounded-2xl border border-orange-200/50 dark:border-orange-400/50 shadow-xl max-w-md">
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-orange-200 to-amber-300 dark:from-orange-500 dark:to-amber-600 rounded-full mb-4 shadow-lg">
+                <span className="text-3xl">🚧</span>
               </div>
-            </>
-          )}
+              <h3 className="text-2xl font-bold bg-gradient-to-r from-orange-500 via-amber-500 to-yellow-500 dark:from-orange-300 dark:via-orange-400 dark:to-amber-400 bg-clip-text text-transparent mb-2">
+                In Development
+              </h3>
+              <p className="text-orange-600 dark:text-orange-300 text-sm font-medium">
+                AI-powered narrative insights will be available in a future release
+              </p>
+            </div>
+          </div>
         </div>
       </div>
-
-      <style >{`
-        @keyframes shimmer {
-          0% { transform: translateX(-100%); }
-          100% { transform: translateX(100%); }
-        }
-        .animate-shimmer {
-          animation: shimmer 2s ease-in-out infinite;
-        }
-      `}</style>
     </div>
   );
 });

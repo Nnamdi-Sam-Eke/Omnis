@@ -1,10 +1,11 @@
 import React, { useEffect, useState, lazy, Suspense, useRef } from "react";
-import { doc, getDoc, collection, getDocs, query, where } from "firebase/firestore";
+import { doc, getDoc, collection, getDocs, query, where} from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../AuthContext";
 import { Activity, Shield, Clock, Users, Download, ChevronRight, Calendar, Zap } from "lucide-react";
+import { generateUserNotifications, processFirestoreNotifications } from "../components/GenerateUserNotification";
 
-const ActiveSessionsModal = lazy(() => import("../components/ActiveSessionsModal"));
+
 
 // Enhanced ActivityLogRow Component with modern UI
 const ActivityLogRow = lazy(() => Promise.resolve({ default: ({ log }) => (
@@ -28,7 +29,7 @@ const ActivityLogRow = lazy(() => Promise.resolve({ default: ({ log }) => (
               </span>
             </div>
             <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-              {log.description}
+              {log.description || log.message}
             </p>
           </div>
         </div>
@@ -168,238 +169,102 @@ const ActivityLogPage = () => {
     
     setIsLoading(true);
     try {
-      // Fetch user document
+      // 1. Fetch user document
       const userRef = doc(db, "users", user.uid);
       const userDoc = await getDoc(userRef);
       
-      // Fetch user sessions subcollection (only today's sessions)
+      // 2. Fetch user sessions subcollection
       const sessionsRef = collection(db, "users", user.uid, "sessions");
       const sessionsSnapshot = await getDocs(sessionsRef);
-      const sessionDocs = sessionsSnapshot.docs.filter(doc => {
-        const sessionData = doc.data();
-        const sessionTime = sessionData.createdAt?.toDate?.();
-        return sessionTime && isToday(sessionTime);
-      });
+      const sessionDocs = sessionsSnapshot.docs;
+
+      // 3. ✅ FETCH TIER CHANGE NOTIFICATIONS FROM FIRESTORE (persistent notifications)
+      const tierChangeNotifs = await getDocs(
+        query(
+          collection(db, "notifications"),
+          where("userId", "==", user.uid),
+          where("isTierChange", "==", true)
+        )
+      );
+      const tierChangeNotifications = tierChangeNotifs.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
 
       if (userDoc.exists()) {
         const userData = userDoc.data();
-        const activityLogs = [];
-
-        // Create activity log entry for last login
-        if (userData.lastLogin) {
-          activityLogs.push({
-            id: "lastLogin",
-            activityType: "Last Login",
-            description: `You logged into your account`,
-            timestamp: userData.lastLogin.toDate(),
-          });
-        }
-
-        // Create activity log entry for profile updates (general profile data)
-        if (userData.profileUpdated) {
-          activityLogs.push({
-            id: "profileUpdated",
-            activityType: "Profile Updated",
-            description: `You made changes to your profile information`,
-            timestamp: userData.profileUpdated.toDate(),
-          });
-        }
-
-        // Create activity log entry for profile picture updates
-        if (userData.profilePictureUpdated) {
-          activityLogs.push({
-            id: "profilePictureUpdated",
-            activityType: "Profile Picture Updated",
-            description: `You updated your profile picture`,
-            timestamp: userData.profilePictureUpdated.toDate(),
-          });
-        }
-
-        // Create activity log entry for password changes
-        if (userData.passwordChanged) {
-          activityLogs.push({
-            id: "passwordChanged",
-            activityType: "Password Changed",
-            description: `You updated your account password`,
-            timestamp: userData.passwordChanged.toDate(),
-          });
-        }
-
-        // Create activity log entry for email changes
-        if (userData.emailChanged) {
-          activityLogs.push({
-            id: "emailChanged",
-            activityType: "Email Changed",
-            description: `You changed your email address`,
-            timestamp: userData.emailChanged.toDate(),
-          });
-        }
-
-        // Create activity log entry for account deletion
-        if (userData.accountDeleted) {
-          activityLogs.push({
-            id: "accountDeleted",
-            activityType: "Account Deleted",
-            description: `You deleted your account`,
-            timestamp: userData.accountDeleted.toDate(),
-          });
-        }
-
-        // Create activity log entry for account creation
-        if (userData.createdAt) {
-          activityLogs.push({
-            id: "accountCreated",
-            activityType: "Account Created",
-            description: `You created your Omnis account`,
-            timestamp: userData.createdAt.toDate(),
-          });
-        }
-
-        // Create activity log entry for session ended
-        if (userData.sessionEnded) {
-          activityLogs.push({
-            id: "sessionEnded",
-            activityType: "Session Ended",
-            description: `Your session ended`,
-            timestamp: userData.sessionEnded.toDate(),
-          });
-        }
-
-        // Create activity log entry for plan upgrades
-        if (userData.planUpgraded) {
-          activityLogs.push({
-            id: "planUpgraded",
-            activityType: "Plan Upgraded",
-            description: `You upgraded your plan to "${userData.planUpgraded.to || 'a higher tier'}"`,
-            timestamp: userData.planUpgraded.timestamp.toDate(),
-          });
-        }
-
-        if (userData.planDowngraded) {
-          activityLogs.push({
-            id: "planDowngraded",
-            activityType: "Plan Downgraded",
-            description: `You downgraded your plan to "${userData.planDowngraded.to || 'a lower tier'}"`,
-            timestamp: userData.planDowngraded.timestamp.toDate(),
-          });
-        }
-
-        // Create activity log entries for trial events
-        if (userData.trialStartedAt && userData.hasUsedSimulationTrial) {
-          activityLogs.push({
-            id: "trialStarted",
-            activityType: "Trial Started",
-            description: `You started your 7-day free trial`,
-            timestamp: userData.trialStartedAt.toDate(),
-          });
-
-          // Calculate trial end date and add log entry if trial has ended
-          const trialEnd = new Date(userData.trialStartedAt.toDate().getTime() + 7 * 24 * 60 * 60 * 1000);
-          if (trialEnd < new Date()) {
-            activityLogs.push({
-              id: "trialEnded",
-              activityType: "Trial Ended",
-              description: `Your 7-day free trial ended`,
-              timestamp: trialEnd,
-            });
-          }
-        }
-
-        // Create activity log entry for payment failures
-        if (userData.paymentFailed) {
-          activityLogs.push({
-            id: "paymentFailed",
-            activityType: "Payment Failed",
-            description: `A payment attempt failed. Please update your billing info.`,
-            timestamp: userData.paymentFailed.toDate(),
-          });
-        }
-
-        // Create activity log entry for report downloads
-        if (userData.reportDownloaded) {
-          activityLogs.push({
-            id: "reportDownloaded",
-            activityType: "Report Downloaded",
-            description: `You downloaded a simulation report`,
-            timestamp: userData.reportDownloaded.toDate(),
-          });
-        }
-
-        // Create activity log entry for multi-device login detection (only today's sessions)
-        if (sessionDocs.length > 1) {
-          const mostRecentSession = sessionDocs[sessionDocs.length - 1];
-          const sessionData = mostRecentSession.data();
-          const sessionTime = sessionData.createdAt?.toDate?.() || new Date();
-          
-          activityLogs.push({
-            id: "multiDeviceLogin",
-            activityType: "Multi-Device Login",
-            description: `Your account was logged in from multiple devices today`,
-            timestamp: sessionTime,
-          });
-        }
-
-        // Handle tier changes with comprehensive upgrade/downgrade detection
+        
+        // Check for tier changes locally and store last known tier
+        let immediateTierChange = null;
         if (userData.tier) {
           const currentTier = userData.tier;
           const previousTier = localStorage.getItem("lastKnownTier");
-          const lastLoggedTier = localStorage.getItem("lastLoggedTier");
 
-          // Define tier hierarchy for comparison
-          const tierHierarchy = {
-            "Free": 0,
-            "Pro": 1,
-            "Enterprise": 2
-          };
-
-          if (previousTier && previousTier !== currentTier && currentTier !== lastLoggedTier) {
-            const currentTierLevel = tierHierarchy[currentTier] || 0;
-            const previousTierLevel = tierHierarchy[previousTier] || 0;
-            
-            const isUpgrade = currentTierLevel > previousTierLevel;
-            const isDowngrade = currentTierLevel < previousTierLevel;
-
-            if (isUpgrade || isDowngrade) {
-              let description = "";
-              
-              if (isUpgrade) {
-                // Handle all upgrade scenarios
-                if (previousTier === "Free" && currentTier === "Pro") {
-                  description = `You upgraded from Free to Pro plan`;
-                } else if (previousTier === "Free" && currentTier === "Enterprise") {
-                  description = `You upgraded from Free to Enterprise plan`;
-                } else if (previousTier === "Pro" && currentTier === "Enterprise") {
-                  description = `You upgraded from Pro to Enterprise plan`;
-                } else {
-                  description = `You upgraded your plan from "${previousTier}" to "${currentTier}"`;
-                }
-              } else if (isDowngrade) {
-                // Handle all downgrade scenarios
-                if (previousTier === "Pro" && currentTier === "Free") {
-                  description = `You downgraded from Pro to Free plan`;
-                } else if (previousTier === "Enterprise" && currentTier === "Free") {
-                  description = `You downgraded from Enterprise to Free plan`;
-                } else if (previousTier === "Enterprise" && currentTier === "Pro") {
-                  description = `You downgraded from Enterprise to Pro plan`;
-                } else {
-                  description = `You downgraded your plan from "${previousTier}" to "${currentTier}"`;
-                }
-              }
-
-              const newLog = {
-                id: `tier${isUpgrade ? "Upgraded" : "Downgraded"}_${Date.now()}`,
-                activityType: isUpgrade ? "Plan Upgraded" : "Plan Downgraded",
-                description: description,
-                timestamp: new Date(),
-              };
-              
-              activityLogs.push(newLog);
-              localStorage.setItem("lastLoggedTier", currentTier);
-            }
+          if (previousTier && previousTier !== currentTier) {
+            // Prepare an immediate synthetic tier-change entry for Activity Log display
+            immediateTierChange = {
+              from: previousTier,
+              to: currentTier
+            };
           }
 
           localStorage.setItem("lastKnownTier", currentTier);
         }
+
+        // Generate notifications using the shared function
+        const notifications = generateUserNotifications(userData, sessionDocs);
+
+        // ✅ ADD: Process and include Firestore tier change notifications
+        const processedTierChanges = processFirestoreNotifications(tierChangeNotifications);
+        notifications.push(...processedTierChanges);
+
+        // If we detected a recent tier change locally, prepend a synthetic activity so it appears immediately
+        // But only if the user document does NOT already contain a persisted planUpgraded/planDowngraded field
+        if (immediateTierChange && !userData.planUpgraded && !userData.planDowngraded) {
+          const now = new Date();
+          const isUpgrade = (function(from, to) {
+            const rank = { Free: 0, Pro: 1, Enterprise: 2 };
+            return (rank[to] || 0) > (rank[from] || 0);
+          })(immediateTierChange.from, immediateTierChange.to);
+
+          notifications.unshift({
+            id: `tier_change_local_${now.getTime()}`,
+            activityType: isUpgrade ? 'Plan Upgraded' : 'Plan Downgraded',
+            title: isUpgrade ? 'Plan Upgraded' : 'Plan Downgraded',
+            message: isUpgrade ? `You upgraded your plan from ${immediateTierChange.from} to ${immediateTierChange.to}` : `You downgraded your plan from ${immediateTierChange.from} to ${immediateTierChange.to}`,
+            type: isUpgrade ? 'success' : 'alert',
+            timestamp: now,
+            source: 'synthetic',
+            isPersistent: true,
+            isTierChange: true,
+            tierChangeTime: now.toISOString()
+          });
+        }
+        
+        // ✅ IMPROVED: Deduplicate notifications (especially tier changes)
+        const deduplicatedNotifications = Array.from(
+          new Map(
+            notifications.map((n) => {
+              // For tier changes, use a composite key to avoid duplicates
+              if (n.isTierChange) {
+                const tierKey = `tierchange_${n.tierChangeDetails?.from || n.message.split('from ')[1]?.split(' ')[0] || ''}_${n.tierChangeDetails?.to || n.message.split('to ')[1]?.split(' ')[0] || ''}`;
+                return [tierKey, n];
+              }
+              return [n.id, n];
+            })
+          ).values()
+        );
+        
+        // Convert notifications to activity log format
+        const activityLogs = deduplicatedNotifications.map(notif => ({
+          id: notif.id,
+          activityType: notif.activityType || notif.title,
+          description: notif.message,
+          timestamp: notif.timestamp instanceof Date ? notif.timestamp : 
+                     (notif.timestamp?.toDate ? notif.timestamp.toDate() : new Date()),
+          type: notif.type,
+          isPersistent: notif.isPersistent
+        }));
 
         // Sort logs by timestamp (most recent first)
         const sortedLogs = activityLogs.sort((a, b) => b.timestamp - a.timestamp);
@@ -445,16 +310,6 @@ const ActivityLogPage = () => {
               Track your account activity and security events
             </p>
           </div>
-          <button
-            onClick={() => setShowSessionsModal(true)}
-            className="group relative px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-medium shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 flex items-center gap-2"
-          >
-            <div className="absolute inset-0 bg-gradient-to-r from-blue-700 to-blue-800 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-            <span className="relative flex items-center gap-2">
-              <Users className="w-4 h-4" />
-              Today's Sessions
-            </span>
-          </button>
         </div>
 
         {/* Stats Cards */}
@@ -474,11 +329,8 @@ const ActivityLogPage = () => {
           <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-lg border border-gray-200 dark:border-gray-700">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Today's Sessions</p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">{activeSessions.length}</p>
-              </div>
-              <div className="w-12 h-12 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center">
-                <Shield className="w-6 h-6 text-green-600 dark:text-green-400" />
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400"></p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white"></p>
               </div>
             </div>
           </div>
@@ -536,16 +388,6 @@ const ActivityLogPage = () => {
           </div>
         </div>
 
-        <Suspense fallback={null}>
-          <ActiveSessionsModal
-            isOpen={showSessionsModal}
-            onClose={() => setShowSessionsModal(false)}
-            sessions={activeSessions}
-            currentSessionId={currentSessionId}
-            onTerminateSession={() => {}}
-            onRefresh={fetchActiveSessions}
-          />
-        </Suspense>
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-  import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
   import React from "react";
   import { Paperclip, Mic, ImageIcon, SendHorizonal, AlertCircle, CheckCircle, XCircle } from "lucide-react";
   import { motion, AnimatePresence } from "framer-motion";
@@ -9,7 +9,6 @@
   import { db, storage } from "../firebase";
   import { useAuth } from '../AuthContext';
   import ReactMarkdown from 'react-markdown';
-  // ADD THIS LINE instead:
   import { callGroqChat } from "../services/omnis-actions";
 
   // ============================================
@@ -65,14 +64,16 @@
     return file;
   };
 
-  const fileToBase64 = (file) => {
+  // Updated to return full data URL (with mime type prefix)
+ const fileToBase64 = (file) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onload = () => resolve(reader.result); // Changed from .split(',')[1]
       reader.onerror = reject;
     });
   };
+
 
   // Remove <think> tags and their content (and any stray tag fragments)
   const stripThink = (s) => {
@@ -412,36 +413,73 @@
     // ENHANCED FILE UPLOAD WITH COMPRESSION
     // ============================================
     const handleFileUpload = async (file) => {
-      if (!file) return;
+    if (!file) return;
 
-      setIsUploading(true);
-      showToast("Processing file...", "info");
+    setIsUploading(true);
+    showToast("Processing file...", "info");
 
-      try {
-        let processedFile = file;
-        let compressionInfo = "";
+    try {
+      let processedFile = file;
+      let compressionInfo = "";
 
-        const fileType = file.type.startsWith("image/")
-          ? "image"
-          : file.type.startsWith("audio/")
-          ? "audio"
-          : file.type.startsWith("video/")
-          ? "video"
-          : "application";
+      const fileType = file.type.startsWith("image/")
+        ? "image"
+        : file.type.startsWith("audio/")
+        ? "audio"
+        : file.type.startsWith("video/")
+        ? "video"
+        : "application";
 
-        // Compress based on type
-        if (fileType === "image") {
-          const originalSize = (file.size / 1024 / 1024).toFixed(2);
-          processedFile = await compressImage(file);
-          const compressedSize = (processedFile.size / 1024 / 1024).toFixed(2);
-          compressionInfo = ` (${originalSize}MB → ${compressedSize}MB)`;
-          showToast(`Image compressed${compressionInfo}`, "success");
-        } else if (fileType === "audio") {
-          processedFile = await compressAudio(file);
-          compressionInfo = ` (${(file.size / 1024 / 1024).toFixed(2)}MB)`;
-        }
+      // Compress based on type
+      if (fileType === "image") {
+        const originalSize = (file.size / 1024 / 1024).toFixed(2);
+        processedFile = await compressImage(file);
+        const compressedSize = (processedFile.size / 1024 / 1024).toFixed(2);
+        compressionInfo = ` (${originalSize}MB → ${compressedSize}MB)`;
+        showToast(`Image compressed${compressionInfo}`, "success");
+      } else if (fileType === "audio") {
+        processedFile = await compressAudio(file);
+        compressionInfo = ` (${(file.size / 1024 / 1024).toFixed(2)}MB)`;
+      }
 
-        // Upload to Firebase Storage with proper path
+      const messagesRef = collection(db, "userInteractions", user.uid, "conversations", conversationId, "messages");
+      
+      // For media files (image, audio, video), store as base64 in Firestore
+      if (fileType === "image" || fileType === "audio" || fileType === "video") {
+        const base64DataURL = await fileToBase64(processedFile);
+        
+        // Get file metadata for AI context
+        const fileMetadata = {
+          name: processedFile.name,
+          type: fileType,
+          size: processedFile.size,
+          originalSize: file.size,
+          mimeType: processedFile.type
+        };
+
+        // Save user message with base64 data in Firestore
+        await addDoc(messagesRef, {
+          sender: "creator",
+          text: base64DataURL, // Store full data URL
+          fileName: processedFile.name,
+          fileType: fileType,
+          fileMetadata: fileMetadata,
+          isBase64Media: true, // Flag to indicate this is base64 media
+          status: "sent",
+          timestamp: new Date(),
+          read: false,
+        });
+
+        showToast(
+          `${fileType.charAt(0).toUpperCase() + fileType.slice(1)} uploaded${compressionInfo}`,
+          "success"
+        );
+
+        // Send to AI with context about the file
+        await handleAIResponseForMedia(fileType, null, processedFile, fileMetadata);
+
+      } else {
+        // For non-media files (PDFs, docs, etc.), upload to Firebase Storage
         const fileRef = ref(
           storage,
           `chat-files/${conversationId}/${Date.now()}_${processedFile.name}`
@@ -460,8 +498,7 @@
           storagePath: uploadResult.ref.fullPath
         };
 
-        // Save user message with file in Firestore
-        const messagesRef = collection(db, "conversations", conversationId, "messages");
+        // Save user message with file URL in Firestore
         await addDoc(messagesRef, {
           sender: "creator",
           text: downloadURL,
@@ -480,14 +517,15 @@
 
         // Send to AI with context about the file
         await handleAIResponseForMedia(fileType, downloadURL, processedFile, fileMetadata);
-
-      } catch (error) {
-        console.error("File upload error:", error);
-        showToast(`Failed to upload file: ${error.message}`, "error");
-      } finally {
-        setIsUploading(false);
       }
-    };
+
+    } catch (error) {
+      console.error("File upload error:", error);
+      showToast(`Failed to upload file: ${error.message}`, "error");
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
 
     // ============================================
@@ -899,6 +937,11 @@
                         </div>
                       )}
 
+                      {msg.fileType === "video" && (
+  <video controls className="max-w-xs h-auto rounded-lg">
+    <source src={msg.text} />
+  </video>
+)}
                       {msg.fileType === "image" && (
                         <img src={msg.text} alt={msg.fileName} className="max-w-xs h-auto rounded-lg" />
                       )}

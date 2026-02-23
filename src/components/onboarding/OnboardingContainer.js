@@ -64,7 +64,7 @@ function OnboardingContainer({ onComplete }) {
       if (onComplete) onComplete();
 
       // Redirect to dashboard
-      navigate("/dashboard");
+      navigate("/overview");
     } catch (err) {
       console.error("Error saving onboarding data:", err);
       alert("Failed to save onboarding data. Please try again.");

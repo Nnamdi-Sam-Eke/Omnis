@@ -23,31 +23,70 @@ ChartJS.register(
   Legend
 );
 
-const allLabels = [
-  "Mar 25", "Mar 26", "Mar 27", "Mar 28", "Mar 29",
-  "Mar 30", "Mar 31", "Apr 1", "Apr 2", "Apr 3",
-  "Apr 4", "Apr 5", "Apr 6", "Apr 7", "Apr 8"
-];
-const allAccuracy = [72, 75, 74, 76, 78, 80, 77, 79, 82, 85, 86, 88, 89, 91, 93];
+// Generate dynamic data based on current date with consistent daily values
+const generateDynamicData = (days = 30) => {
+  const labels = [];
+  const accuracy = [];
+  const today = new Date();
+  
+  // Function to create a consistent "random" value for a given date
+  const getConsistentValue = (dateString) => {
+    // Use the date string as a seed for consistent randomness
+    let hash = 0;
+    for (let i = 0; i < dateString.length; i++) {
+      hash = ((hash << 5) - hash) + dateString.charCodeAt(i);
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    // Convert hash to a number between 0 and 1
+    return Math.abs(Math.sin(hash));
+  };
+  
+  // Start from 30 days ago
+  let baseAccuracy = 65; // Starting accuracy
+  
+  for (let i = days - 1; i >= 0; i--) {
+    const date = new Date(today);
+    date.setDate(date.getDate() - i);
+    
+    // Format date as "MM/DD/YY"
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const year = String(date.getFullYear()).slice(-2);
+    const dateLabel = `${month}/${day}/${year}`;
+    labels.push(dateLabel);
+    
+    // Generate accuracy with upward trend + consistent randomness for each date
+    // Gradual improvement from 65% to ~90% with some variation
+    const trend = baseAccuracy + ((days - i) / days) * 20; // Increases over time
+    const consistentRandom = getConsistentValue(dateLabel); // Same value for same date
+    const randomVariation = (consistentRandom - 0.5) * 8; // ±4% variation but consistent per date
+    const value = Math.min(95, Math.max(65, trend + randomVariation));
+    accuracy.push(Math.round(value * 10) / 10); // Round to 1 decimal
+  }
+  
+  return { labels, accuracy };
+};
 
 const ScenarioAccuracyChart = forwardRef((props,ref) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [range, setRange] = useState(7);
+  const [dynamicData, setDynamicData] = useState(() => generateDynamicData(30));
 
   useEffect(() => {
     if (isOpen) {
       setIsLoading(true);
+      // No need to regenerate - date-based seeding ensures consistent values
       const t = setTimeout(() => {
         setIsLoading(false);
       
-      }, 500); // Keep it responsive — reduce fake delay
+      }, 500); // Keep it responsive
       return () => clearTimeout(t);
     }
   }, [isOpen]);
 
-  const labels = range === "all" ? allLabels : allLabels.slice(-range);
-  const dataPoints = range === "all" ? allAccuracy : allAccuracy.slice(-range);
+  const labels = range === "all" ? dynamicData.labels : dynamicData.labels.slice(-range);
+  const dataPoints = range === "all" ? dynamicData.accuracy : dynamicData.accuracy.slice(-range);
 
   const data = {
     labels,
@@ -190,20 +229,31 @@ const ScenarioAccuracyChart = forwardRef((props,ref) => {
       </div>
 
       <div className={`transition-all duration-500 ease-in-out overflow-y-auto overflow-x-auto ${isOpen ? 'max-h-[600px] opacity-100' : 'max-h-0 opacity-0'}`}>
-        <div className="flex flex-wrap gap-3 mb-6">
-          {[7, 14, 30, "all"].map((d) => (
-            <button
-              key={d}
-              onClick={() => setRange(d)}
-              className={`py-3 px-6 text-sm rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 hover:-translate-y-0.5 ${
-                range === d
-                  ? "bg-gradient-to-r from-purple-500 via-violet-500 to-indigo-500 text-white shadow-lg shadow-purple-500/40 hover:shadow-purple-500/50"
-                  : "bg-gradient-to-r from-slate-100 to-slate-200 dark:from-slate-700 dark:to-slate-800 text-slate-700 dark:text-slate-200 hover:from-slate-200 hover:to-slate-300 dark:hover:from-slate-600 dark:hover:to-slate-700 hover:shadow-lg shadow-slate-200/50 dark:shadow-slate-800/50"
+        <div className="flex flex-col sm:flex-row sm:flex-wrap items-start sm:items-center gap-3 mb-6">
+          {/* Current Accuracy Display */}
+          <div className="flex flex-col">
+            <span className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
+              {dataPoints[dataPoints.length - 1].toFixed(1)}%
+            </span>
+            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 mt-0.5">Current Accuracy</p>
+          </div>
+          
+          {/* Date Range Buttons */}
+          <div className="flex flex-wrap gap-2 w-full sm:w-auto sm:ml-auto">
+            {[7, 14, 30, "all"].map((d) => (
+              <button
+                key={d}
+                onClick={() => setRange(d)}
+                className={`flex-1 sm:flex-none py-2 sm:py-2.5 px-4 sm:px-5 text-xs sm:text-sm rounded-lg sm:rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 hover:-translate-y-0.5 ${
+                  range === d
+                    ? "bg-gradient-to-r from-purple-500 via-violet-500 to-indigo-500 text-white shadow-lg shadow-purple-500/40 hover:shadow-purple-500/50"
+                    : "bg-gradient-to-r from-slate-100 to-slate-200 dark:from-slate-700 dark:to-slate-800 text-slate-700 dark:text-slate-200 hover:from-slate-200 hover:to-slate-300 dark:hover:from-slate-600 dark:hover:to-slate-700 hover:shadow-lg shadow-slate-200/50 dark:shadow-slate-800/50"
               }`}
             >
               {d === "all" ? "All Data" : `${d} Days`}
             </button>
           ))}
+          </div>
         </div>
 
        <div className="relative w-full max-w-5xl mx-auto h-[50vh] sm:h-[50vh] md:h-[55vh] lg:h-[60vh] xl:h-[65vh] 2xl:h-[70vh] transition-all duration-300 bg-gradient-to-br from-white via-slate-50/50 to-purple-50/30 dark:from-slate-800 dark:via-slate-800/80 dark:to-purple-900/20 rounded-2xl border border-slate-200/80 dark:border-slate-700/60 shadow-inner overflow-hidden">
