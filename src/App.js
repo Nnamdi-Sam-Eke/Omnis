@@ -285,11 +285,11 @@ const AppContent = () => {
                         <Route path="/" element={<PrivateRoute><OmnisDashboard /></PrivateRoute>} />
                         {/* <Route path="/home" element={<PrivateRoute><Home /></PrivateRoute>} /> */}
                         <Route path="/overview" element={<PrivateRoute><OmnisDashboard /></PrivateRoute>} />
-                        <Route path="/partner-chat" element={<PrivateRoute><PartnerChat /></PrivateRoute>} />
+                        {/* <Route path="/partner-chat" element={<PrivateRoute><PartnerChat /></PrivateRoute>} /> */}
                         <Route path="/saved-scenarios" element={<PrivateRoute><SavedScenarios /></PrivateRoute>} />
                         <Route path="/support" element={<PrivateRoute><Support /></PrivateRoute>} />
                         <Route path="/activity-log" element={<PrivateRoute><ActivityLog /></PrivateRoute>} />
-                        <Route path="/resources" element={<PrivateRoute><ResourcesPage /></PrivateRoute>} />
+                        {/* <Route path="/resources" element={<PrivateRoute><ResourcesPage /></PrivateRoute>} /> */}
                         <Route path="/new-scenario" element={<PrivateRoute><ScenarioTabs /></PrivateRoute>} />
                         <Route path="/analytics" element={<PrivateRoute><AnalyticsPage /></PrivateRoute>} />
                         <Route path="/payments" element={<PrivateRoute><PaymentsPage /></PrivateRoute>} />

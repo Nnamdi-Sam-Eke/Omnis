@@ -76,13 +76,13 @@ function Sidebar({ isSidebarOpen, setIsSidebarOpen, onHoverChange }) {
   const navItems = [
     // { name: 'Home', icon: <FiHome />, path: '/home' },
     { name: 'Overview', icon: <FiGrid />, path: '/overview' },
-    { name: 'Partner Chat', icon: <FiMessageCircle />, path: '/partner-chat' },
+    // { name: 'Partner Chat', icon: <FiMessageCircle />, path: '/partner-chat' },
     { name: 'New Scenario', icon: <FiPlus />, path: '/new-scenario' },
     { name: 'Saved Scenarios', icon: <FiBookmark />, path: '/saved-scenarios' },
     { name: 'Analytics', icon: <FiBarChart />, path: '/analytics' },
     { name: 'Activity Log', icon: <FiList />, path: '/activity-log' },
-    { name: 'Resources', icon: <FiDatabase />, path: '/resources' },
-    { name: 'Payments', icon: <FiCreditCard />, path: '/payments' },
+    // { name: 'Resources', icon: <FiDatabase />, path: '/resources' },
+    // { name: 'Payments', icon: <FiCreditCard />, path: '/payments' },
     { name: 'Support', icon: <FiHelpCircle />, path: '/support' },
     // { name: 'Settings', icon: <FiSettings />, path: '/settings' },
     { name: 'My Profile', icon: <FiUserX />, path: '/profile', mobileOnly: true }
@@ -220,7 +220,7 @@ function Sidebar({ isSidebarOpen, setIsSidebarOpen, onHoverChange }) {
             </ul>
 
             {/* Accounts section */}
-            {(isHovered || window.innerWidth < 640) && (
+            {/* {(isHovered || window.innerWidth < 640) && (
               <div className="mt-8 border-t border-white/20 pt-6">
                 <h4 className="text-sm font-bold uppercase tracking-widest text-white/80 mb-4 flex items-center gap-2">
                   <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
@@ -273,7 +273,7 @@ function Sidebar({ isSidebarOpen, setIsSidebarOpen, onHoverChange }) {
                   </button>
                 </div>
               </div>
-            )}
+            )} */}
           </div>
 
           {/* Bottom section - Mobile only */}
