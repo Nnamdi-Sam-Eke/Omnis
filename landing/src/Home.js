@@ -99,7 +99,7 @@ function Home() {
 
   // Hero Section
   const HeroSection = () => (
-    <div className="relative min-h-[75vh] bg-black flex items-start pt-8 md:pt-16 overflow-hidden">
+    <div className="relative min-h-[100vh] bg-black flex items-start pt-8 md:pt-16 overflow-hidden">
       {/* Subtle animated blobs - very dark */}
       <div className="absolute inset-0 opacity-10" aria-hidden="true">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500 rounded-full mix-blend-lighten filter blur-3xl animate-blob will-change-transform"></div>
@@ -107,7 +107,7 @@ function Home() {
         <div className="absolute bottom-1/4 left-1/3 w-96 h-96 bg-indigo-500 rounded-full mix-blend-lighten filter blur-3xl animate-blob animation-delay-4000 will-change-transform"></div>
       </div>
       
-      <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="relative z-10 w-full max-w-7xl mt-8 mx-auto px-4 sm:px-6 lg:px-8">
         <div className="max-w-xl md:max-w-2xl lg:max-w-3xl">
           <div className="inline-flex items-center px-4 py-2 bg-purple-500/10 border border-purple-400/30 rounded-full text-purple-300 text-sm mb-6 md:mb-8 backdrop-blur-sm">
             <Sparkles aria-hidden="true" className="w-4 h-4 mr-2" />
