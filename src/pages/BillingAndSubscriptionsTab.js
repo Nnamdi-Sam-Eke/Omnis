@@ -1,48 +1,90 @@
-import React, { useState, Suspense, lazy } from "react";
+// BillingAndSubscriptionsTab.js
+import React, { useEffect, useRef, useState, Suspense, lazy } from "react";
 
-// Lazy load the modular components for better performance
 const BillingInfo = lazy(() => import("../components/BillingInfo"));
 const SubscriptionInfo = lazy(() => import("../components/Subscription"));
 
-const tabLabels = {
-  billing: "Billing Info",
-  subscriptions: "Subscriptions",
-};
+const TABS = [
+  {
+    key: "billing",
+    label: "Billing Info",
+    icon: (
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M3 10h18M7 15h1m4 0h1m-7 4h12a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+        />
+      </svg>
+    ),
+  },
+  {
+    key: "subscriptions",
+    label: "Subscriptions",
+    icon: (
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"
+        />
+      </svg>
+    ),
+  },
+];
+
+const TabSkeleton = () => (
+  <div className="animate-pulse space-y-4 pt-2">
+    <div className="h-10 bg-slate-200 dark:bg-slate-700 rounded-xl" />
+    <div className="h-36 bg-slate-200 dark:bg-slate-700 rounded-2xl" />
+    <div className="h-14 bg-slate-200 dark:bg-slate-700 rounded-2xl" />
+  </div>
+);
 
 const BillingAndSubscriptionsTab = () => {
   const [activeTab, setActiveTab] = useState("billing");
 
-  async function onSaveBillingInfo({ paymentMethodId, billingAddress }) {
-  const response = await fetch("/api/save-payment-method", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      userId: "currentUserId", // get this from your auth/user context
-      paymentMethodId,
-      billingAddress,
-    }),
-  });
+  // For smooth UX: focus + scroll on tab change
+  const panelRef = useRef(null);
 
-  if (!response.ok) {
-    throw new Error("Failed to save billing info");
-  }
+  useEffect(() => {
+    // Let the new tab panel render first (Suspense/lazy)
+    const t = setTimeout(() => {
+      // Focus for accessibility + “snappy” feeling
+      if (panelRef.current) {
+        panelRef.current.focus({ preventScroll: true });
+        // Smooth scroll to panel top
+        panelRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 50);
 
-  const data = await response.json();
-  return data;
-}
+    return () => clearTimeout(t);
+  }, [activeTab]);
 
+  const goToBilling = (opts = { scrollToRequest: false }) => {
+    setActiveTab("billing");
 
-
+    // Optional: if you later add an element with id="billing-request-upgrade"
+    // inside BillingInfo, this will jump directly there.
+    if (opts.scrollToRequest) {
+      setTimeout(() => {
+        const el = document.getElementById("billing-request-upgrade");
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 200);
+    }
+  };
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      {/* Tabs Navigation */}
+    <div>
+      {/* Tab Navigation */}
       <div
         role="tablist"
         aria-label="Billing and Subscription Tabs"
-        className="flex gap-4 justify-center sm:justify-start mb-6"
+        className="flex gap-1 bg-slate-100 dark:bg-slate-900/60 p-1 rounded-xl mb-5"
       >
-        {Object.entries(tabLabels).map(([key, label]) => (
+        {TABS.map(({ key, label, icon }) => (
           <button
             key={key}
             role="tab"
@@ -50,54 +92,49 @@ const BillingAndSubscriptionsTab = () => {
             aria-controls={`${key}-panel`}
             id={`${key}-tab`}
             onClick={() => setActiveTab(key)}
-            className={`px-4 py-2 rounded-full font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+            type="button"
+            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-slate-400 dark:focus:ring-slate-500 ${
               activeTab === key
-                ? "bg-blue-500 text-white border border-blue-700"
-                : "bg-gray-300 text-gray-800 hover:bg-green-300"
+                ? "bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm"
+                : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
             }`}
           >
+            {icon}
             {label}
           </button>
         ))}
       </div>
 
-      {/* Tabs Content */}
-      <div className="relative h-full transition-all">
+      {/* Tab Panels */}
+      <div>
         {activeTab === "billing" && (
-  <Suspense 
-      fallback={
-              <div className="flex justify-center items-center h-40">
-                <div className="w-10 h-10 border-4 border-blue-400 border-t-transparent rounded-full animate-spin" />
-              </div>
-            }
->
-    <div
-      id="billing-panel"
-      role="tabpanel"
-      aria-labelledby="billing-tab"
-      tabIndex={0}
-    >
-      <BillingInfo onSaveBillingInfo={onSaveBillingInfo} />
-    </div>
-  </Suspense>
-)}
-
+          <Suspense fallback={<TabSkeleton />}>
+            <div
+              id="billing-panel"
+              role="tabpanel"
+              aria-labelledby="billing-tab"
+              tabIndex={-1}
+              ref={panelRef}
+              className="focus:outline-none"
+            >
+              <BillingInfo />
+            </div>
+          </Suspense>
+        )}
 
         {activeTab === "subscriptions" && (
-          <Suspense
-            fallback={
-              <div className="flex justify-center items-center h-40">
-                <div className="w-10 h-10 border-4 border-blue-400 border-t-transparent rounded-full animate-spin" />
-              </div>
-            }
-          >
+          <Suspense fallback={<TabSkeleton />}>
             <div
               id="subscriptions-panel"
               role="tabpanel"
               aria-labelledby="subscriptions-tab"
-              tabIndex={0}
+              tabIndex={-1}
+              ref={panelRef}
+              className="focus:outline-none"
             >
-              <SubscriptionInfo />
+              {/* ✅ This is the key wiring:
+                  Subscription tab button now actually navigates to Billing tab */}
+              <SubscriptionInfo onGoToBilling={() => goToBilling({ scrollToRequest: true })} />
             </div>
           </Suspense>
         )}

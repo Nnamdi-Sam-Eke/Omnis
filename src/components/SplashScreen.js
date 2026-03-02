@@ -23,27 +23,26 @@ export default function SplashScreen() {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.8 }}
         >
-          <motion.div
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 2 }}
-            className="flex items-center gap-2"
-          >
-            <img
-              src={favicon}
-              alt="App Logo"
-              className="w-16 h-16"
-            />
-            <h1 className="text-4xl font-bold capitalize text-indigo-500 font-poppins ">
-              Omnis
-            </h1>
-          </motion.div>
-
+<motion.div
+  initial={{ scale: 0.9, opacity: 0 }}
+  animate={{ scale: 1, opacity: 1 }}
+  transition={{ duration: 1.5 }}
+  className="flex items-center gap-1 translate-y-[1px]"
+>
+  <img
+    src={favicon}
+    alt="App Logo"
+    className="w-[52px] h-[52px]"
+  />
+  <h1 className="text-[38px] font-bold tracking-tight text-indigo-500 font-poppins">
+    Omnis
+  </h1>
+</motion.div>
           <motion.p
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 1.5, duration: 2.5 }}
-            className="text-sm text-gray-600 dark:text-gray-400 mt-3"
+            className="text-lg italic text-gray-600 dark:text-gray-400 mt-3"
           >
             {/* Simulate. Predict. Evolve. */}
            Model. Adapt. Succeed.

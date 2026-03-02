@@ -351,7 +351,7 @@ const AccountPage = () => {
                 <div className="p-3 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full">
                   <Monitor className="text-white" size={24} />
                 </div>
-                <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">BIlling</h2>
+                <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Billing</h2>
               </div>
               
               <PaymentsPage />

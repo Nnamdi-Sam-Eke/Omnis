@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { collection, getDocs, query, orderBy, deleteDoc, doc, updateDoc, addDoc } from "firebase/firestore";
 import { db } from "../firebase";
@@ -19,7 +18,7 @@ const SavedComponent = ({ setCurrentSavedScenario, setSidebarOpen }) => {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [page, setPage] = useState(1);
   const [toastMessage, setToastMessage] = useState('');
-  const pageSize = 5;
+  const pageSize = 6;
 
   // Fetch saved queries from Firestore
   useEffect(() => {
@@ -578,16 +577,16 @@ const SavedComponent = ({ setCurrentSavedScenario, setSidebarOpen }) => {
                     Page {page} of {totalPages}
                   </div>
                   <div className="flex items-center gap-2">
-                    <button 
-                      onClick={() => setPage(p => Math.max(1, p - 1))} 
-                      disabled={page === 1} 
+                    <button
+                      onClick={() => setPage(p => Math.max(1, p - 1))}
+                      disabled={page === 1}
                       className="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
                       Previous
                     </button>
-                    <button 
-                      onClick={() => setPage(p => Math.min(totalPages, p + 1))} 
-                      disabled={page === totalPages} 
+                    <button
+                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                      disabled={page === totalPages}
                       className="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
                       Next

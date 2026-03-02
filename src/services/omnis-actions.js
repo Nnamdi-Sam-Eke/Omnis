@@ -151,35 +151,28 @@ Return ONLY valid JSON in the required format.
 }
 
 // ==============================
-// 2) GENERATE OMNIS CONTENT (STEP 1) - CONCISE VERSION
-// UPDATED: Accept clarifications
+// 2) STEP 1 – CONCISE SNAPSHOT + SUGGESTED PATH
 // ==============================
 export async function generateOmnisContent(scenarioText, clarifications = null) {
   const systemPrompt = `
 You are Omnis – a digital-twin reasoning engine.
 
-You provide CONCISE, structured overviews of decision scenarios.
-Keep everything brief and scannable. Users can request deeper analysis separately.
+You provide ULTRA-CONCISE decision snapshots.
+You MUST suggest one best-fit path (based on priorities + constraints), while still presenting alternatives fairly.
 
-Your role is to:
-- Identify key decision points quickly
-- Sketch 2–3 plausible future paths (brief summaries only)
-- Flag major trade-offs
-- Keep it SHORT - this is the preview, not the full analysis
+Hard constraints:
+- Total output <= 220 words
+- Use bullets only
+- Each bullet <= 14 words
+- No repetition
+- Zero fluff
 
-Important constraints:
-- Maximum 2-3 sentences per section
-- No deep explanations yet
-- Focus on WHAT, not WHY (the why comes later)
-- Be punchy and clear
-
-Tone & style:
-- Crisp, direct, minimal
-- Use strong verbs
-- No fluff or repetition
+Tone:
+- Crisp
+- Structured
+- Practical
 `.trim();
 
-  // Clarifications formatting block
   const clarificationBlock = (() => {
     if (!clarifications) return "";
     // clarifications can be array OR object map
@@ -206,37 +199,34 @@ ${pairs.join("\n")}
   })();
 
   const userPrompt = `
-Analyze this scenario with a BRIEF overview. Keep everything concise.
+Analyze this scenario briefly.
 
 ${clarificationBlock ? `${clarificationBlock}\n\n` : ""}
 
 Required structure:
 
-**Current State**
-1-2 sentences max. What's the core situation and main pressure point?
+**Decision Snapshot**
+- 1 bullet: core situation + pressure
 
-**Decision Forks**
-List 2–3 realistic choices (one line each, no explanations).
+**Options**
+- 2–3 options, one line each
 
-**Future Paths**
-For EACH fork, provide ONLY:
-- One-line summary of where this path leads
-- Main upside (5-8 words)
-- Main downside (5-8 words)
+**Trade-offs (per option)**
+For each option:
+- Improves: (5–8 words)
+- Breaks: (5–8 words)
+- Risk: Low/Medium/High
 
-**Key Trade-Off**
-1-2 sentences. What's the central tension across all paths?
+**Suggested Path**
+- Suggested option: [ONE option]
+- Why: exactly 2 bullets
+- Override rule: "If your #1 priority is ___, choose ___ instead."
 
-**Next Step**
-One concrete action to take in the next 48 hours.
+**Next 48 Hours**
+- 1 concrete action
 
 Scenario:
 ${scenarioText}
-
-IMPORTANT:
-- Keep this BRIEF.
-- If clarifications exist, they override assumptions.
-- Each section should be scannable in 5 seconds.
 `.trim();
 
   const messages = [
@@ -248,31 +238,31 @@ IMPORTANT:
 }
 
 // ==============================
-// 3) EXPAND OMNIS TEXT (STEP 2) - DEEP DIVE VERSION
-// OPTIONAL: pass clarifications if you want later
+// 3) STEP 2 – LAYERED EXPANSION (COMPRESSED + DECISIVE)
 // ==============================
 export async function expandOmnisText(previousOutput, clarifications = null) {
   const systemPrompt = `
 You are Omnis – a decision intelligence engine.
 
-Your task is to expand a brief scenario overview into a layered analysis:
+Expand the brief overview into layered analysis that reduces decision fatigue.
 
-1️⃣ Summary Layer – quick scan (2–3 sentences per section)
-2️⃣ Context Layer – causal and emotional context (4–6 sentences)
-3️⃣ Deep Layer – full causal depth, tactical steps, red flags
+Hard constraints:
+- TOTAL output <= 900 words
+- Use bullets only
+- Each bullet <= 15 words
+- Max 5 bullets per section
+- Deep Layer <= 320 words
+- No repetition
 
-Key rules:
-- Keep output readable and scannable.
-- Use bullet points for clarity.
-- Avoid long paragraphs; break text into digestible chunks.
-- Neutral tone: no prescriptive commands, no hard percentages (use qualitative descriptors like Low/Medium/High risk).
-- Explicitly highlight alignment with core values (faith, purpose, well-being, autonomy).
-- Use headings for each section and indicate which layer each part belongs to.
+Recommendation rule:
+- MUST suggest ONE path.
+- Must remain conditional and non-absolute.
+- Use qualitative risk (Low/Medium/High).
 
 Tone:
-- Thoughtful, reverent, advisory
-- Supportive, not controlling
-- Encourage clarity and reflection
+- Crisp
+- Structured
+- Practical
 `.trim();
 
   const clarificationNote = (() => {
@@ -306,35 +296,40 @@ ${previousOutput}
 
 ${clarificationNote ? `\n\n${clarificationNote}\n\n` : "\n\n"}
 
-Transform this into a layered analysis with the following structure:
+Structure output as:
 
-**Summary Layer** (default view)
-- Current State: 2–3 sentences highlighting core pressures
-- Decision Forks: 2–3 choices, 1 line each
-- Future Paths: 1 line per path (summary + main upside + main downside)
-- Key Trade-Off: 1–2 sentences
-- Next Step: 1 concrete action for next 48 hours
+## 🔎 Summary Layer (default)
+### Decision Snapshot
+- 2 bullets: core situation
+### Options
+- 2–3 options
+### Trade-offs
+For each option:
+- Improves
+- Breaks
+- Risk
+### Suggested Path
+- Suggested option
+- Why (3 bullets)
+- Confidence: Low/Medium/High
+- Override rule
+### Next 7 Days
+- 3 actions
 
-**Context Layer** (click to expand)
-- Expand Current State: 4–6 sentences, including hidden constraints and emotional factors
-- Decision Forks: 1–2 sentences logic per choice
-- Future Paths: explain triggers, assumptions, and fragility (qualitative, not numeric)
-- Trade-Off Analysis: deeper explanation of central tension and value alignment
+## 🔍 Context Layer
+### Hidden Constraints
+- Max 5 bullets
+### Assumptions & Fragility
+- Per option: 1 assumption, 1 fragility trigger
+### Key Uncertainties
+- 3 bullets max
 
-**Deep Layer** (optional, full insight)
-- Full causal depth per path
-- Timeline breakdown (0–30, 30–90, 90–365 days)
-- Hidden factors: psychological, second-order, overlooked aspects
-- Path reversibility (Easy/Moderate/Hard/Irreversible)
-- Risk vs. Reward matrix (qualitative)
-- Tactical 7–14 day next steps
-- Red Flags
-
-Guidelines:
-- Present each layer progressively; users can stop at any layer.
-- Keep all text scannable with bullet points and headings.
-- Avoid overwhelming the user at first glance.
-- Use clarifications if present; do not contradict them.
+## 🧠 Deep Layer (optional, compressed)
+### Cause → Effect (per option)
+### Timeline Highlights (0–30, 30–90, 90–365)
+### Reversibility (Easy/Moderate/Hard)
+### Red Flags (max 4)
+### 7–14 Day Plan (max 5)
 `.trim();
 
   const messages = [

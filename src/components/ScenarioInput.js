@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from "react";
-import { saveUserInteraction } from "../services/userBehaviourService";
 import { useMemory } from "../MemoryContext";
 import { db } from "../firebase";
 import { Trash2, Plus, Tag } from "lucide-react";
@@ -16,7 +15,7 @@ import {
   getDoc,
   serverTimestamp,
 } from "firebase/firestore";
-import { Timestamp } from "firebase/firestore";
+
 
 import { useAuth } from "../AuthContext";
 import { ChevronRight, ChevronUp, Lock, Crown, Copy, Undo, Redo, Type, Sparkles, Edit3, Zap } from "lucide-react";
@@ -32,6 +31,7 @@ const SimplifiedInputForm = ({ scenario, onScenarioChange, onCategoryChange, pla
   const [history, setHistory] = useState([scenario?.text || ""]);
   const [historyIndex, setHistoryIndex] = useState(0);
   const [showCopySuccess, setShowCopySuccess] = useState(false);
+  
   const textareaRef = useRef(null);
 
   // Debounce State
@@ -274,6 +274,7 @@ export default function ScenarioInput({ onSimulate, setGeneratedResults, setSimu
   // Tracks whether the user has manually toggled
   const [userToggled, setUserToggled] = useState(false);
   const [results, setResults] = useState([]);
+  const [chatHistory, setChatHistory] = useState([]);
   const { memory, saveToFirestore } = useMemory();
   const [error, setError] = useState(null);
   // Local simulation state (restored after refactor)
@@ -354,12 +355,12 @@ export default function ScenarioInput({ onSimulate, setGeneratedResults, setSimu
     }
   }, []); // Run only on mount
 
-  const [chatHistory, setChatHistory] = useState([]);
-  const [userInteractions, setUserInteractions] = useState([]);
+  
   const [trialExpired, setTrialExpired] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showUpgradeModalComponent, setShowUpgradeModalComponent] = useState(false);
   const [loading, setLoading] = React.useState(true);
+  
   const [isModalOpen, setIsModalOpen] = useState(false); // Add this state if not present
   
   // ---- Clarification (NEW) ----
@@ -387,9 +388,9 @@ export default function ScenarioInput({ onSimulate, setGeneratedResults, setSimu
   const isFreeTier = userTier === "free";
   const isPaidTier = userTier === "pro" || userTier === "enterprise";
   
-  // Timer to switch off loading after 4 seconds (on mount)
+  // Timer to switch off loading after 3 seconds (on mount)
   useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 3000);
+    const timer = setTimeout(() => setLoading(false), 2000);
     return () => clearTimeout(timer);
   }, []);
 
@@ -416,10 +417,9 @@ export default function ScenarioInput({ onSimulate, setGeneratedResults, setSimu
 
   useEffect(() => {
     if (user) {
-      loadFirestoreMemory();
       checkTrialStatus();
-      loadChatHistory();
-      loadUserInteractions();
+      
+     
     }
   }, [user]);
 
@@ -486,56 +486,8 @@ export default function ScenarioInput({ onSimulate, setGeneratedResults, setSimu
     updateSimulationInput("");
   };
 
-  const loadFirestoreMemory = async () => {
-    if (!user) return;
-    try {
-      const q = query(
-        collection(db, "users", user.uid, "memory"),
-        orderBy("timestamp", "desc")
-      );
-      const querySnapshot = await getDocs(q);
-      const loadedMemory = querySnapshot.docs.map((doc) => doc.data());
-      console.log("✅ Firestore Memory Loaded:", loadedMemory);
-    } catch (error) {
-      console.error("❌ Error loading Firestore memory:", error);
-    }
-  };
 
-  const loadChatHistory = async () => {
-    if (!user) return;
-    try {
-      const q = query(
-        collection(db, "userInteractions", user.uid, "interactions"),
-        orderBy("timestamp", "desc")
-      );
-      const querySnapshot = await getDocs(q);
-      const loadedChat = querySnapshot.docs.map((doc) => doc.data());
-      setChatHistory(loadedChat);
-      console.log("✅ Chat history loaded");
-    } catch (error) {
-      console.error("❌ Error loading chat history:", error);
-    }
-  };
 
-  const loadUserInteractions = async () => {
-    if (!user) return;
-    try {
-      const userInteractionsRef = collection(db, "userInteractions", user.uid, "interactions");
-      const q = query(userInteractionsRef, orderBy("timestamp", "desc"));
-
-      
-      const snapshot = await getDocs(q);
-      const interactions = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      
-      setUserInteractions(interactions);
-      console.log("✅ User interactions loaded:", interactions);
-    } catch (error) {
-      console.error("❌ Error fetching user interactions:", error);
-    }
-  };
 
   const checkTrialStatus = async () => {
     if (!user) return;
@@ -778,8 +730,13 @@ const runAnalysisForCurrentScenario = async () => {
     setScenarios(updated);
   };
 
-  const handleAddScenario = () => setScenarios([...scenarios, { text: "", category: "" }]);
-
+  const handleAddScenario = () => {
+  if (isFreeTier && trialExpired) {
+    setShowUpgradeModal(true);
+    return;
+  }
+  setScenarios([...scenarios, { text: "", category: "" }]);
+};
   const handleRemoveScenario = (index) => {
     if (scenarios.length > 1) {
       setScenarios(scenarios.filter((_, i) => i !== index));

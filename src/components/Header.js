@@ -4,15 +4,10 @@ import ThemeToggle from './ThemeToggle';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
 import favicon from '../images/SVG.svg';
-import { db } from '../firebase';
-import {
-  collection,
-  query,
-  where,
-  onSnapshot,
-} from 'firebase/firestore';
+
 import LogoutSplash from './logoutSplash';
 import NotificationDropdown from './NotificationsDropdown';
+import { useNotifications } from '../context/NotificationsContext';
 
 const Header = ({
   toggleSidebar,
@@ -27,23 +22,7 @@ const Header = ({
   const [localLogoutMessage, setLocalLogoutMessage] = useState('');
 
   const { user } = useAuth();
-  const [unreadCount, setUnreadCount] = useState(0);
-
-  useEffect(() => {
-    if (!user?.uid) return;
-
-    const q = query(
-      collection(db, "notifications"),
-      where("userId", "==", user.uid),
-      where("read", "==", false)
-    );
-
-    const unsub = onSnapshot(q, (snapshot) => {
-      setUnreadCount(snapshot.size);
-    });
-
-    return () => unsub();
-  }, [user?.uid]);
+  const { unreadCount } = useNotifications();
 
   const handleLogout = async () => {
     setIsProfileMenuOpen(false);

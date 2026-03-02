@@ -10,6 +10,327 @@ import { doc, collection, addDoc, serverTimestamp, query, where, getDocs, delete
 import { db } from "../firebase";
 import { useAuth } from '../AuthContext';
 
+// ── Strip markdown syntax to plain readable text (for TTS) ──────────────
+function stripMarkdownForSpeech(text) {
+  if (!text || typeof text !== 'string') return '';
+  return text
+    .replace(/#{1,6}\s+/g, '')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/^[-*•]\s+/gm, '')
+    .replace(/^\d+\.\s+/gm, '')
+    .replace(/\|/g, ' ')
+    .replace(/^[-:| ]+$/gm, '')
+    .replace(/---+/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+// ── Currency detection & normalization ───────────────────────────────────
+// Detects the currency the user intended from their query and fixes any
+// wrong symbols the LLM may have substituted in the response.
+function detectCurrency(queryText) {
+  if (!queryText) return null;
+  const q = queryText;
+  // Explicit symbol matches first
+  if (/₦/.test(q))                                         return { symbol: '₦', code: 'NGN', names: ['naira'] };
+  if (/£/.test(q))                                         return { symbol: '£', code: 'GBP', names: ['pound', 'sterling'] };
+  if (/€/.test(q))                                         return { symbol: '€', code: 'EUR', names: ['euro'] };
+  if (/¥/.test(q))                                         return { symbol: '¥', code: 'JPY', names: ['yen', 'yuan'] };
+  if (/R\s?\d|ZAR|rand/i.test(q))                         return { symbol: 'R',  code: 'ZAR', names: ['rand'] };
+  if (/KSh|KES|shilling/i.test(q))                        return { symbol: 'KSh',code: 'KES', names: ['shilling'] };
+  if (/GH₵|GHS|cedi/i.test(q))                            return { symbol: 'GH₵',code: 'GHS', names: ['cedi'] };
+  if (/NGN|naira/i.test(q))                                return { symbol: '₦', code: 'NGN', names: ['naira'] };
+  if (/GBP|pound/i.test(q))                                return { symbol: '£', code: 'GBP', names: ['pound'] };
+  if (/EUR|euro/i.test(q))                                 return { symbol: '€', code: 'EUR', names: ['euro'] };
+  if (/\$/.test(q) || /USD|dollar/i.test(q))               return { symbol: '$', code: 'USD', names: ['dollar'] };
+  return null;
+}
+
+function normalizeCurrency(text, queryCurrency) {
+  if (!text || !queryCurrency) return text;
+  // If the response already uses the correct symbol, nothing to do
+  if (text.includes(queryCurrency.symbol)) return text;
+  // Only replace if the response is using a WRONG symbol ($ is the most common LLM fallback)
+  const wrongSymbols = ['$', '£', '€', '¥'].filter(s => s !== queryCurrency.symbol);
+  let result = text;
+  for (const wrong of wrongSymbols) {
+    // Replace symbol when followed by a number (e.g. $1,000 or $500k)
+    const re = new RegExp(`\${wrong}(?=\s?\d)`, 'g');
+    result = result.replace(re, queryCurrency.symbol);
+  }
+  // Also replace written-out wrong currency names (e.g. "dollars" → "naira")
+  if (queryCurrency.code !== 'USD') {
+    result = result.replace(/USD/g, queryCurrency.code);
+    result = result.replace(/dollars?/gi, queryCurrency.names[0]);
+    result = result.replace(/US dollars?/gi, queryCurrency.names[0]);
+  }
+  return result;
+}
+// ─────────────────────────────────────────────────────────────────────────
+
+// ── Inline markdown renderer (**bold**, *italic*) ─────────────────────────
+const InlineText = ({ text }) => {
+  const parts = text.split(/(\*\*.*?\*\*|\*.*?\*)/g);
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (part.startsWith('**') && part.endsWith('**'))
+          return <strong key={i} className="font-semibold text-slate-800 dark:text-slate-100">{part.slice(2, -2)}</strong>;
+        if (part.startsWith('*') && part.endsWith('*'))
+          return <em key={i} className="italic">{part.slice(1, -1)}</em>;
+        return <span key={i}>{part}</span>;
+      })}
+    </>
+  );
+};
+
+// ── Markdown table renderer ───────────────────────────────────────────────
+const MarkdownTable = ({ lines }) => {
+  const rows = lines.map(l => l.split('|').map(c => c.trim()).filter(Boolean));
+  const header = rows[0] || [];
+  const body = rows.slice(2); // skip separator row
+  return (
+    <div className="overflow-x-auto my-3 rounded-lg border border-slate-200 dark:border-slate-700">
+      <table className="w-full text-sm border-collapse">
+        <thead>
+          <tr className="bg-slate-100 dark:bg-slate-700">
+            {header.map((h, i) => (
+              <th key={i} className="px-4 py-2 text-left font-semibold text-slate-700 dark:text-slate-200 border-b border-slate-200 dark:border-slate-600">
+                <InlineText text={h} />
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {body.map((row, ri) => (
+            <tr key={ri} className={ri % 2 === 0 ? 'bg-white dark:bg-slate-800' : 'bg-slate-50 dark:bg-slate-800/60'}>
+              {row.map((cell, ci) => (
+                <td key={ci} className="px-4 py-2 text-slate-700 dark:text-slate-300 border-b border-slate-100 dark:border-slate-700">
+                  <InlineText text={cell} />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+const isTableRow = (line) => /^\|.+\|/.test(line.trim());
+const isTableSep = (line) => /^\|[\s\-:|]+\|/.test(line.trim());
+
+// ── Structured object renderer ────────────────────────────────────────────
+const ObjectResponse = ({ obj, currentSentenceText = null }) => (
+  <div className="space-y-4">
+    {Object.entries(obj).map(([key, value]) => (
+      <div key={key}>
+        <p className="text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-1">
+          {key.replace(/_/g, ' ')}
+        </p>
+        {typeof value === 'string'
+          ? <FormattedResponse response={value} currentSentenceText={currentSentenceText} />
+          : Array.isArray(value)
+            ? <ul className="space-y-1 pl-4 border-l-2 border-blue-200 dark:border-blue-700">
+                {value.map((item, i) => (
+                  <li key={i} className="text-sm text-slate-700 dark:text-slate-300">
+                    {typeof item === 'object' && item !== null
+                      ? <ObjectResponse obj={item} />
+                      : String(item)}
+                  </li>
+                ))}
+              </ul>
+            : typeof value === 'object' && value !== null
+              ? <ObjectResponse obj={value} />
+              : <p className="text-sm text-slate-700 dark:text-slate-300">{String(value)}</p>
+        }
+      </div>
+    ))}
+  </div>
+);
+
+// ── Collapsible section wrapper ───────────────────────────────────────────
+const CollapsibleSection = ({ title, icon, defaultOpen = true, accentClass = 'border-blue-400 dark:border-blue-600', children }) => {
+  const [open, setOpen] = React.useState(defaultOpen);
+  return (
+    <div className={`border-l-4 ${accentClass} pl-3 my-3 rounded-r-lg`}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2 w-full text-left group py-1"
+      >
+        {icon && <span className="text-base">{icon}</span>}
+        <span className="font-semibold text-slate-800 dark:text-slate-100 text-sm flex-1">{title}</span>
+        <span className={`text-slate-400 dark:text-slate-500 transition-transform duration-200 text-xs mr-1 ${open ? 'rotate-180' : ''}`}>▼</span>
+      </button>
+      {open && <div className="mt-2 pb-2 space-y-2">{children}</div>}
+    </div>
+  );
+};
+
+// ── Parse text into ## sections ───────────────────────────────────────────
+function parseSections(text) {
+  const lines = text.split('\n');
+  const sections = [];
+  let current = { heading: null, icon: null, lines: [] };
+
+  const extractIcon = (h) => {
+    const m = h.match(/^([\u{1F300}-\u{1FAFF}]|[\u{2600}-\u{27BF}]|\u{1F4A1}|\u{1F4CA}|\u{1F3AF}|\u{26A1}|\u{1F511}|\u{1F4CC}|\u{1F50D}|[🔵🔴🟡🟢💡📊🧠🎯⚡🔑📌🔍🔮💎🛡️⚙️])+\s*/u);
+    if (m) return { icon: m[0].trim(), rest: h.slice(m[0].length) };
+    return { icon: null, rest: h };
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('## ')) {
+      if (current.lines.some(l => l.trim())) sections.push(current);
+      const { icon, rest } = extractIcon(trimmed.slice(3));
+      current = { heading: rest || trimmed.slice(3), icon, lines: [] };
+    } else {
+      current.lines.push(line);
+    }
+  }
+  if (current.lines.some(l => l.trim())) sections.push(current);
+  return sections;
+}
+
+// ── Main formatter ────────────────────────────────────────────────────────
+const FormattedResponse = ({ response, sectioned = false, currentSentenceText = null }) => {
+  if (typeof response === 'object' && response !== null && !Array.isArray(response)) {
+    return <ObjectResponse obj={response} />;
+  }
+  if (Array.isArray(response)) {
+    return (
+      <ul className="space-y-1 pl-4 border-l-2 border-blue-200 dark:border-blue-700">
+        {response.map((item, i) => (
+          <li key={i} className="text-sm text-slate-700 dark:text-slate-300">
+            {typeof item === 'object' && item !== null ? <ObjectResponse obj={item} /> : String(item)}
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  const text = typeof response === 'string' ? response : String(response ?? '');
+  if (!text.trim()) return null;
+
+  // Sectioned mode: render ## headings as collapsible panels
+  if (sectioned) {
+    const sections = parseSections(text);
+    const accentClasses = [
+      'border-blue-400 dark:border-blue-600',
+      'border-purple-400 dark:border-purple-600',
+      'border-emerald-400 dark:border-emerald-600',
+      'border-amber-400 dark:border-amber-600',
+      'border-rose-400 dark:border-rose-600',
+    ];
+    return (
+      <div className="space-y-1">
+        {sections.map((section, si) =>
+          section.heading ? (
+            <CollapsibleSection
+              key={si}
+              title={section.heading}
+              icon={section.icon}
+              defaultOpen={si === 0}
+              accentClass={accentClasses[si % accentClasses.length]}
+            >
+              <FormattedResponse response={section.lines.join('\n')} currentSentenceText={currentSentenceText} />
+            </CollapsibleSection>
+          ) : (
+            <FormattedResponse key={si} response={section.lines.join('\n')} currentSentenceText={currentSentenceText} />
+          )
+        )}
+      </div>
+    );
+  }
+
+  // Standard line-by-line rendering
+  // sentenceMatch: returns true if this line's clean text matches or contains the currently spoken sentence
+  const sentenceMatch = (rawLine) => {
+    if (!currentSentenceText) return false;
+    const clean = rawLine.replace(/^#{1,6}\s+/, '').replace(/^[-*•]\s+/, '').replace(/^\d+\.\s+/, '').replace(/\*\*/g, '').replace(/\*/g, '').trim().toLowerCase();
+    const spoken = currentSentenceText.toLowerCase().trim();
+    return clean.includes(spoken) || spoken.includes(clean.slice(0, Math.min(clean.length, 60)));
+  };
+
+  const hlClass = 'bg-yellow-200 dark:bg-yellow-800/60 rounded transition-colors duration-300';
+
+  const lines = text.split('\n');
+  const elements = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i].trim();
+    if (!line) { i++; continue; }
+
+    // Table detection
+    if (isTableRow(line)) {
+      const tableLines = [];
+      while (i < lines.length && (isTableRow(lines[i].trim()) || isTableSep(lines[i].trim()))) {
+        tableLines.push(lines[i].trim());
+        i++;
+      }
+      if (tableLines.length >= 2) {
+        elements.push(<MarkdownTable key={`tbl-${i}`} lines={tableLines} />);
+      }
+      continue;
+    }
+
+    if (line.startsWith('### ')) {
+      const txt = line.slice(4);
+      elements.push(<h4 key={i} className={`text-sm font-bold text-slate-800 dark:text-slate-100 mt-4 mb-1 first:mt-0 ${sentenceMatch(txt) ? hlClass : ''}`}><InlineText text={txt} /></h4>);
+    } else if (line.startsWith('## ')) {
+      const txt = line.slice(3);
+      elements.push(<h3 key={i} className={`text-base font-bold text-slate-800 dark:text-slate-100 mt-4 mb-1 first:mt-0 ${sentenceMatch(txt) ? hlClass : ''}`}><InlineText text={txt} /></h3>);
+    } else if (line.startsWith('# ')) {
+      const txt = line.slice(2);
+      elements.push(<h2 key={i} className={`text-lg font-bold text-slate-800 dark:text-slate-100 mt-4 mb-2 first:mt-0 ${sentenceMatch(txt) ? hlClass : ''}`}><InlineText text={txt} /></h2>);
+    } else if (/^[-*•]\s+/.test(line)) {
+      const items = [];
+      const rawItems = [];
+      while (i < lines.length && /^[-*•]\s+/.test(lines[i].trim())) {
+        const raw = lines[i].trim();
+        items.push(raw.replace(/^[-*•]\s+/, ''));
+        rawItems.push(raw);
+        i++;
+      }
+      elements.push(
+        <ul key={`ul-${i}`} className="space-y-1.5 my-1">
+          {items.map((item, idx) => (
+            <li key={idx} className={`flex gap-2 text-sm text-slate-700 dark:text-slate-300 rounded ${sentenceMatch(item) ? hlClass : ''}`}>
+              <span className="mt-2 w-1.5 h-1.5 rounded-full bg-blue-400 dark:bg-blue-500 flex-shrink-0" />
+              <InlineText text={item} />
+            </li>
+          ))}
+        </ul>
+      );
+      continue;
+    } else if (/^\d+\.\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\d+\.\s+/.test(lines[i].trim())) {
+        items.push(lines[i].trim().replace(/^\d+\.\s+/, ''));
+        i++;
+      }
+      elements.push(
+        <ol key={`ol-${i}`} className="space-y-1.5 pl-5 list-decimal list-outside my-1">
+          {items.map((item, idx) => (
+            <li key={idx} className={`text-sm text-slate-700 dark:text-slate-300 pl-1 rounded ${sentenceMatch(item) ? hlClass : ''}`}><InlineText text={item} /></li>
+          ))}
+        </ol>
+      );
+      continue;
+    } else if (/^---+$/.test(line)) {
+      elements.push(<hr key={i} className="border-slate-200 dark:border-slate-700 my-3" />);
+    } else {
+      elements.push(<p key={i} className={`text-sm text-slate-700 dark:text-slate-300 leading-relaxed rounded px-0.5 ${sentenceMatch(line) ? hlClass : ''}`}><InlineText text={line} /></p>);
+    }
+    i++;
+  }
+  return <div className="space-y-2">{elements}</div>;
+};
+// ─────────────────────────────────────────────────────────────────────────
+
+
 const ScenarioSimulationCard = ({ results,
             setResults,
             loading,
@@ -21,6 +342,13 @@ const ScenarioSimulationCard = ({ results,
  const [toast, setToast] = useState({ title: "Notification", message: null });
   const [clickedButtons, setClickedButtons] = useState({});
   const [localResults, setLocalResults] = useState(results || []);
+
+  // Track per-scenario variable edits and re-run loading states
+  const [variableEditsById, setVariableEditsById] = useState({});
+  const [rerunLoadingById, setRerunLoadingById] = useState({});
+
+  // Ref to preserve original results for reset
+  const originalResultsRef = useRef(null);
   const [rawResults, setRawResults] = useState({}); // Store raw results from /run
   const [narrativeCache, setNarrativeCache] = useState({}); // Cache narratives
   const [explanationModal, setExplanationModal] = useState({
@@ -64,6 +392,162 @@ const ScenarioSimulationCard = ({ results,
     showFullscreenMode: false
   });
 
+  // Capture original results once on first load
+  useEffect(() => {
+    if (!originalResultsRef.current && results?.length) {
+      originalResultsRef.current = results;
+    }
+  }, [results]);
+
+  // -- Plan gating: Free users get 3 trials for Save + Export --
+  const tier = (user?.tier || "Free").toLowerCase();
+  const isFreePlan = tier === "free";
+  const PREMIUM_TRIAL_LIMIT = 3;
+
+  const premiumTrialsKey = user?.uid ? `omnis_premium_trials_used_${user.uid}` : null;
+
+  const getPremiumTrialsUsed = () => {
+    if (!premiumTrialsKey) return 0;
+    const raw = localStorage.getItem(premiumTrialsKey);
+    const n = parseInt(raw || "0", 10);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const [premiumTrialsUsed, setPremiumTrialsUsed] = useState(getPremiumTrialsUsed());
+
+  useEffect(() => {
+    if (user?.uid) setPremiumTrialsUsed(getPremiumTrialsUsed());
+  }, [user?.uid]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const premiumTrialsLeft = Math.max(0, PREMIUM_TRIAL_LIMIT - premiumTrialsUsed);
+  const trialsExhausted = isFreePlan && premiumTrialsLeft === 0;
+
+  // consumePremiumTrial(actionLabel)
+  // Pro/Enterprise: always allow.
+  // Free + trials remaining: consume 1 and allow.
+  // Free + no trials left: show blocking toast.
+  const consumePremiumTrial = (actionLabel = "this feature") => {
+    if (!isFreePlan) return true;
+
+    if (!user?.uid) {
+      setToast({ title: "Login Required", message: `🔒 Please log in to use ${actionLabel}.` });
+      return false;
+    }
+
+    const used = getPremiumTrialsUsed();
+    if (used >= PREMIUM_TRIAL_LIMIT) {
+      setToast({
+        title: "Upgrade Required",
+        message: `🔒 You’ve used all ${PREMIUM_TRIAL_LIMIT} free trials for Save/Export. Upgrade to continue.`,
+      });
+      return false;
+    }
+
+    const next = used + 1;
+    localStorage.setItem(premiumTrialsKey, String(next));
+    setPremiumTrialsUsed(next);
+
+    if (next < PREMIUM_TRIAL_LIMIT) {
+      setToast({
+        title: "Trial Used",
+        message: `✨ ${actionLabel} used a free trial (${next}/${PREMIUM_TRIAL_LIMIT} used).`,
+      });
+    } else {
+      setToast({
+        title: "Last Free Trial Used",
+        message: `⚠️ That was your last free trial. Upgrade to keep saving and exporting.`,
+      });
+    }
+
+    return true;
+  };
+
+  // Update a single variable edit for a given scenario timestamp
+  function updateVariableEdit(timestamp, key, value) {
+    setVariableEditsById(prev => ({
+      ...prev,
+      [timestamp]: {
+        ...(prev[timestamp] || {}),
+        [key]: value
+      }
+    }));
+  }
+
+  // Replace a single scenario's response in both local and parent state
+  function replaceScenarioResult(timestamp, newResponse) {
+    setLocalResults(prev =>
+      prev.map((r, i) =>
+        (r?.timestamp || i) === timestamp
+          ? { ...r, response: newResponse }
+          : r
+      )
+    );
+
+    if (setResults) {
+      setResults(prev =>
+        (prev || []).map((r, i) =>
+          (r?.timestamp || i) === timestamp
+            ? { ...r, response: newResponse }
+            : r
+        )
+      );
+    }
+  }
+
+  // Re-run a scenario with any pending variable edits merged into the prompt
+  async function handleRerunScenario(result, timestamp) {
+    try {
+      setRerunLoadingById(prev => ({ ...prev, [timestamp]: true }));
+
+      const originalScenario = result?.query || "";
+      const clarifications = result?.clarifications || result?.response?.clarifications || null;
+      const edits = variableEditsById[timestamp] || {};
+
+      let editedScenarioText = originalScenario;
+
+      if (Object.keys(edits).length > 0) {
+        const editBlock = Object.entries(edits)
+          .map(([key, value]) => `- ${key}: ${value}`)
+          .join("\n");
+        editedScenarioText += `\n\nUpdated Variables:\n${editBlock}`;
+      }
+
+      const newOutput = await generateOmnisContent(editedScenarioText, clarifications);
+      const currency = detectCurrency(result?.query || '');
+      replaceScenarioResult(timestamp, {
+        ...result.response,
+        result: currency ? normalizeCurrency(newOutput, currency) : newOutput
+      });
+    } catch (err) {
+      console.error(err);
+      setToast({
+        title: "Re-run Failed",
+        message: err.message || "Could not re-run scenario."
+      });
+    } finally {
+      setRerunLoadingById(prev => ({ ...prev, [timestamp]: false }));
+    }
+  }
+
+  // Reset a scenario back to its original response and clear any edits
+  function handleResetScenario(timestamp) {
+    if (!originalResultsRef.current) return;
+
+    const original = originalResultsRef.current.find(
+      (r, i) => (r?.timestamp || i) === timestamp
+    );
+
+    if (!original) return;
+
+    setVariableEditsById(prev => {
+      const copy = { ...prev };
+      delete copy[timestamp];
+      return copy;
+    });
+
+    replaceScenarioResult(timestamp, original.response);
+  }
+
   const handleExportReportClick = () => {
     setToast({ title: "Coming Soon", message: "Branching paths under development, try again soon." });
     setTimeout(() => {
@@ -77,6 +561,7 @@ const ScenarioSimulationCard = ({ results,
       setToast({ title: "Login Required", message: "❌ Please log in to save scenarios" });
       return;
     }
+    if (!consumePremiumTrial("Save scenario")) return;
 
     try {
       if (savedScenarioIds.has(timestamp)) {
@@ -232,18 +717,25 @@ const ScenarioSimulationCard = ({ results,
     };
   }, []);
 
-  // Update local results when props change
+  // Update local results when props change — normalize currency symbols
   useEffect(() => {
-    setLocalResults(results || []);
-    
-    // Store raw results for later narration
     if (results && Array.isArray(results)) {
+      const normalized = results.map(r => {
+        if (!r || !r.response?.result) return r;
+        const currency = detectCurrency(r.query || '');
+        return currency
+          ? { ...r, response: { ...r.response, result: normalizeCurrency(r.response.result, currency) } }
+          : r;
+      });
+      setLocalResults(normalized);
       const rawData = {};
-      results.forEach((result, index) => {
+      normalized.forEach((result, index) => {
         const timestamp = result?.timestamp || index;
         rawData[timestamp] = result;
       });
       setRawResults(rawData);
+    } else {
+      setLocalResults(results || []);
     }
   }, [results]);
 
@@ -265,56 +757,96 @@ const ScenarioSimulationCard = ({ results,
 
   // Text-to-speech functions
   function splitIntoSentences(text) {
-    // Clean the text and split into sentences
-    const cleanText = text.replace(/\*\*(.*?)\*\*/g, '$1').replace(/\n+/g, ' ');
-    const sentences = cleanText.match(/[^\.!?]+[\.!?]+/g) || [cleanText];
-    return sentences.map(s => s.trim()).filter(s => s.length > 0);
+    // Strip markdown symbols but PRESERVE newline-based order (headings, bullets, etc.)
+    const clean = stripMarkdownForSpeech(text);
+    // Split each line individually, then split lines by sentence-ending punctuation
+    // This preserves the logical reading order of structured content
+    const sentences = [];
+    const lines = clean.split(/\n+/).map(l => l.trim()).filter(l => l.length > 2);
+    for (const line of lines) {
+      // Split line at sentence boundaries (.!?;:) but keep the delimiter
+      const parts = line.match(/[^.!?;:]+[.!?;:]+|[^.!?;:]+$/g) || [line];
+      for (const part of parts) {
+        const s = part.trim();
+        if (s.length > 3) sentences.push(s);
+      }
+    }
+    return sentences;
   }
 
   function generateSuggestedTags(content, result) {
-    const tags = [];
-    
-    // Time-based tags
-    const now = new Date();
-    const quarter = Math.ceil((now.getMonth() + 1) / 3);
-    tags.push(`#Q${quarter}`, `#${now.getFullYear()}`);
-    
-    // Content-based tags
-    const lowerContent = content.toLowerCase();
-    if (lowerContent.includes('cost') || lowerContent.includes('saving') || lowerContent.includes('budget')) {
-      tags.push('#cost-savings');
+    const tags = new Set();
+
+    // ── Source material ───────────────────────────────────────────────────
+    const query     = (result?.query || '').toLowerCase();
+    const category  = (result?.category || '').toLowerCase();
+    const lc        = (content || '').toLowerCase();
+    const combined  = `${query} ${category} ${lc}`;
+
+    // ── 1. Category tag (always) ──────────────────────────────────────────
+    if (category && category !== 'uncategorized') {
+      tags.add(`#${category.replace(/\s+/g, '-')}`);
     }
-    if (lowerContent.includes('risk') || lowerContent.includes('threat')) {
-      tags.push('#risk-analysis');
+
+    // ── 2. Domain / topic detection ───────────────────────────────────────
+    const domainRules = [
+      { tag: '#career',         keywords: ['job','career','quit','resign','promotion','salary','employer','hire','employment','freelance','work','role','title'] },
+      { tag: '#finance',        keywords: ['budget','revenue','mrr','arr','profit','loss','cash','savings','loan','debt','income','expense','fund','capital','investment','equity','valuation'] },
+      { tag: '#startup',        keywords: ['startup','saas','product','launch','founder','seed','mvp','traction','growth hacking','scale','venture','pitch','b2b','b2c'] },
+      { tag: '#business',       keywords: ['business','company','client','contract','deal','partnership','market','sales','pipeline','enterprise','b2b'] },
+      { tag: '#real-estate',    keywords: ['property','rent','mortgage','lease','landlord','tenant','house','apartment','real estate','land'] },
+      { tag: '#health',         keywords: ['health','medical','doctor','mental','therapy','wellness','fitness','hospital','insurance','coverage','diagnosis'] },
+      { tag: '#relationships',  keywords: ['relationship','marriage','divorce','partner','family','spouse','breakup','dating','conflict','communication'] },
+      { tag: '#immigration',    keywords: ['visa','immigration','permit','citizenship','migrate','relocation','abroad','country','border','status'] },
+      { tag: '#education',      keywords: ['degree','school','university','study','course','gpa','tuition','scholarship','phd','masters','student'] },
+      { tag: '#legal',          keywords: ['legal','lawsuit','contract','court','attorney','compliance','regulation','law','liability','clause','dispute'] },
+      { tag: '#investment',     keywords: ['invest','portfolio','stock','crypto','return','yield','dividend','asset','market','trade','hedge'] },
+      { tag: '#personal',       keywords: ['personal','life','goal','habit','mindset','productivity','self','decision','priority','balance'] },
+      { tag: '#team',           keywords: ['team','employee','hire','culture','management','leadership','ceo','cto','cofounder','hr','staff'] },
+      { tag: '#marketing',      keywords: ['marketing','brand','seo','ads','traffic','conversion','funnel','content','social media','campaign','audience'] },
+      { tag: '#operations',     keywords: ['operations','process','logistics','supply chain','vendor','workflow','system','automation','efficiency'] },
+    ];
+    for (const { tag, keywords } of domainRules) {
+      if (keywords.some(kw => combined.includes(kw))) tags.add(tag);
     }
-    if (lowerContent.includes('recommend') || lowerContent.includes('suggest')) {
-      tags.push('#recommendations');
+
+    // ── 3. Scenario type ──────────────────────────────────────────────────
+    const typeRules = [
+      { tag: '#decision',       keywords: ['should i','decide','choice','option','choose','pick','go with'] },
+      { tag: '#risk-analysis',  keywords: ['risk','threat','danger','downside','worst case','fragile','failure','loss'] },
+      { tag: '#trade-off',      keywords: ['trade-off','trade off','pros and cons','versus','vs','compare','weigh'] },
+      { tag: '#planning',       keywords: ['plan','roadmap','timeline','milestone','strategy','next steps','phase'] },
+      { tag: '#forecasting',    keywords: ['forecast','predict','projection','model','estimate','expected','likely','scenario'] },
+      { tag: '#stress-test',    keywords: ['stress test','what if','worst case','downside','fail','break','limit'] },
+      { tag: '#negotiation',    keywords: ['negotiat','leverage','offer','counter','deal','terms','salary negotiat'] },
+      { tag: '#exit-strategy',  keywords: ['exit','quit','leave','walk away','sell','acquire','wind down'] },
+      { tag: '#optimization',   keywords: ['optim','maximiz','minimiz','efficien','improv','best','reduce cost'] },
+      { tag: '#validation',     keywords: ['validate','confirm','verify','feasib','viable','proof','test'] },
+    ];
+    for (const { tag, keywords } of typeRules) {
+      if (keywords.some(kw => combined.includes(kw))) tags.add(tag);
     }
-    if (lowerContent.includes('predict') || lowerContent.includes('forecast')) {
-      tags.push('#predictions');
-    }
-    if (lowerContent.includes('anomaly') || lowerContent.includes('unusual')) {
-      tags.push('#anomaly-detection');
-    }
-    
-    // Confidence-based tags
-    if (lowerContent.includes('uncertain') || lowerContent.includes('might') || lowerContent.includes('possibly')) {
-      tags.push('#low-confidence');
-    } else if (lowerContent.includes('certain') || lowerContent.includes('definitely') || lowerContent.includes('confirmed')) {
-      tags.push('#high-confidence');
-    }
-    
-    // Result-based tags
-    if (result?.error) {
-      tags.push('#error', '#needs-review');
-    } else if (result?.response?.task) {
-      const task = result.response.task.toLowerCase();
-      if (task.includes('analysis')) tags.push('#analysis');
-      if (task.includes('optimization')) tags.push('#optimization');
-      if (task.includes('simulation')) tags.push('#simulation');
-    }
-    
-    return [...new Set(tags)]; // Remove duplicates
+
+    // ── 4. Outcome / confidence signals ──────────────────────────────────
+    if (/high (risk|uncertainty|stakes)|volatile|unpredictable|very risky/.test(lc)) tags.add('#high-risk');
+    if (/low risk|stable|safe bet|low uncertainty|minimal risk/.test(lc)) tags.add('#low-risk');
+    if (/strongly recommend|clear choice|optimal|best option|definitive/.test(lc)) tags.add('#high-confidence');
+    if (/uncertain|unclear|might|possibly|it depends|hard to say/.test(lc)) tags.add('#needs-clarity');
+    if (/irreversible|permanent|no going back|cannot undo/.test(lc)) tags.add('#irreversible');
+    if (/reversible|can undo|easy to change|flexible/.test(lc)) tags.add('#reversible');
+    if (/urgent|time.sensitive|asap|immediately|deadline/.test(lc)) tags.add('#urgent');
+    if (/long.term|multi.year|5 year|10 year|decade/.test(lc)) tags.add('#long-term');
+    if (/short.term|quick win|30 day|90 day|immediate/.test(lc)) tags.add('#short-term');
+
+    // ── 5. Financial magnitude ────────────────────────────────────────────
+    const hasLargeFigure = /\$\d{6,}|[₦€£]\d{6,}|\d+[mb]|million|billion/i.test(combined);
+    if (hasLargeFigure) tags.add('#high-stakes');
+
+    // ── 6. Error state ────────────────────────────────────────────────────
+    if (result?.error) { tags.add('#error'); tags.add('#needs-review'); }
+
+    // ── 7. Cap and return (max 8 most relevant tags) ──────────────────────
+    return [...tags].slice(0, 8);
   }
 
   function speakNarrative(text) {
@@ -322,45 +854,52 @@ const ScenarioSimulationCard = ({ results,
       alert("Your browser doesn't support speech synthesis.");
       return;
     }
-    
-    // Stop any current speech
+
     window.speechSynthesis.cancel();
-    
-    // Split into sentences and prepare for highlighting
+
     const sentences = splitIntoSentences(text);
-    setSpeechState(prev => ({ ...prev, sentences, currentSentenceIndex: 0 }));
-    
+    // Store sentences so highlight overlay knows what index maps to what text
+    setSpeechState(prev => ({ ...prev, sentences, currentSentenceIndex: 0, isSpeaking: true }));
+
+    // Use a ref-like closure variable so onend always sees the current index
     let currentIndex = 0;
-    
+    // Keep a reference so stopNarration can cancel cleanly
+    let cancelled = false;
+
     function speakSentence(index) {
-      if (index >= sentences.length) {
-        setSpeechState(prev => ({ ...prev, isSpeaking: false, currentSentenceIndex: -1 }));
+      if (cancelled || index >= sentences.length) {
+        if (!cancelled) setSpeechState(prev => ({ ...prev, isSpeaking: false, currentSentenceIndex: -1 }));
         return;
       }
-      
+
       setSpeechState(prev => ({ ...prev, currentSentenceIndex: index }));
-      
+
       const utterance = new SpeechSynthesisUtterance(sentences[index]);
       utterance.lang = "en-US";
       utterance.rate = speechState.speechRate;
       utterance.pitch = 1;
-      
-      if (speechState.selectedVoice) {
-        utterance.voice = speechState.selectedVoice;
-      }
-      
+      if (speechState.selectedVoice) utterance.voice = speechState.selectedVoice;
+
+      // Add a natural pause after headings / short declarative lines
+      const endsWithPunct = /[.!?;:]$/.test(sentences[index].trim());
       utterance.onend = () => {
-        speakSentence(index + 1);
+        currentIndex = index + 1;
+        // Small pause between sentences for natural cadence
+        if (endsWithPunct) {
+          setTimeout(() => speakSentence(currentIndex), 180);
+        } else {
+          speakSentence(currentIndex);
+        }
       };
-      
-      utterance.onerror = () => {
-        setSpeechState(prev => ({ ...prev, isSpeaking: false, currentSentenceIndex: -1 }));
+      utterance.onerror = (e) => {
+        if (e.error !== 'interrupted') {
+          setSpeechState(prev => ({ ...prev, isSpeaking: false, currentSentenceIndex: -1 }));
+        }
       };
-      
+
       window.speechSynthesis.speak(utterance);
     }
-    
-    setSpeechState(prev => ({ ...prev, isSpeaking: true }));
+
     speakSentence(0);
   }
 
@@ -370,6 +909,7 @@ const ScenarioSimulationCard = ({ results,
   }
 
   function exportAsMarkdown(content, tags = [], result = null) {
+    if (!consumePremiumTrial("Export report")) return;
     const timestamp = new Date().toISOString();
     const query = result?.query || 'Unknown Query';
     
@@ -408,6 +948,7 @@ ${JSON.stringify(result, null, 2)}
   }
 
   function exportAsPDF(content, tags = [], result = null) {
+    if (!consumePremiumTrial("Export report")) return;
     // Create a printable HTML version
     const timestamp = new Date().toISOString();
     const query = result?.query || 'Unknown Query';
@@ -506,11 +1047,13 @@ const handleExplainFurther = async (result, timestamp) => {
     const tags = generateSuggestedTags(expanded, result);
 
     setExportState((prev) => ({ ...prev, suggestedTags: tags }));
-    setNarrativeCache((prev) => ({ ...prev, [timestamp]: expanded }));
+    const expandCurrency = detectCurrency(result?.query || '');
+    const normalizedExpanded = expandCurrency ? normalizeCurrency(expanded, expandCurrency) : expanded;
+    setNarrativeCache((prev) => ({ ...prev, [timestamp]: normalizedExpanded }));
     setExplanationModal((prev) => ({
       ...prev,
       loading: false,
-      content: expanded,
+      content: normalizedExpanded,
       error: null,
     }));
   } catch (error) {
@@ -620,8 +1163,8 @@ const handleExplainFurther = async (result, timestamp) => {
           <p className="text-gray-500 dark:text-gray-400 text-sm">Add your categorized scenarios and click "Run Simulation" to see results here</p>
         </div>
       ) : (
-        <div className="bg-gradient-to-br from-white to-slate-50 dark:from-slate-900 dark:to-slate-800 shadow-xl hover:shadow-2xl hover:shadow-blue-500/20 dark:border-slate-700 rounded-2xl p-8 border border-slate-200 text-slate-900 dark:text-white col-span-2 w-full transition-all duration-300">
-          <div className="flex items-center justify-between mb-6">
+        <div className="bg-gradient-to-br from-white to-slate-50 dark:from-slate-900 dark:to-slate-800 shadow-xl hover:shadow-2xl hover:shadow-blue-500/20 dark:border-slate-700 rounded-2xl p-8 border border-slate-200 text-slate-900 dark:text-white col-span-2 w-full transition-all duration-300 flex flex-col max-h-[85vh]">
+          <div className="flex items-center justify-between mb-6 flex-shrink-0">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl flex items-center justify-center shadow-lg">
                 <span className="text-white font-bold">⚡</span>
@@ -637,12 +1180,12 @@ const handleExplainFurther = async (result, timestamp) => {
             </div>
           </div>
 
-          <div className="h-full overflow-y-auto scrollbar-thin scrollbar-thumb-slate-400 scrollbar-track-slate-200 dark:scrollbar-thumb-slate-600 dark:scrollbar-track-slate-800 space-y-4 pr-2">
+          <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-400 scrollbar-track-slate-200 dark:scrollbar-thumb-slate-600 dark:scrollbar-track-slate-800 space-y-4 pr-2 min-h-0">
             {/* Show generated content in output card */}
             {localResults.filter(Boolean).map((result, index) => {
               const timestamp = result?.timestamp || index;
               return (
-                <div key={timestamp} className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm p-6 rounded-xl shadow-lg border border-slate-200/50 dark:border-slate-700/50 hover:border-slate-300 dark:hover:border-slate-600 hover:shadow-xl transition-all duration-300 transform hover:scale-[1.02]">
+                <div key={timestamp} className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm p-6 rounded-xl shadow-lg border border-slate-200/50 dark:border-slate-700/50 hover:border-slate-300 dark:hover:border-slate-600 hover:shadow-xl transition-all duration-300">
 
 <div className="flex items-start justify-between mb-3 gap-3">
   <h4 className="text-lg font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2 flex-1 min-w-0">
@@ -660,9 +1203,10 @@ const handleExplainFurther = async (result, timestamp) => {
                       <p className="text-red-600 dark:text-red-400 text-sm font-medium">{result.error}</p>
                     </div>
                   ) : (
-                    <div className="text-sm text-slate-600 dark:text-slate-300 mt-2">
-                      {result?.response?.result || "⚠️ No response"}
-
+                    <div className="mt-2">
+                      {result?.response?.result
+                        ? <FormattedResponse response={result.response.result} />
+                        : <p className="text-sm text-slate-400 dark:text-slate-500 italic">⚠️ No response</p>}
                     </div>
                   )}
 
@@ -689,6 +1233,78 @@ const handleExplainFurther = async (result, timestamp) => {
                       </details>
                     </div>
                   )}
+
+                  {/* Editable Variables – collapsible like Clarifications */}
+                  {!result?.error && (() => {
+                    const vars = extractVariables(result?.query);
+                    return (
+                      <div className="mt-4">
+                        <details className="group">
+                          <summary className="flex items-center gap-2 cursor-pointer text-sm font-medium text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 transition-colors">
+                            <span className="text-blue-500 group-open:rotate-90 transition-transform">▶</span>
+                            Editable Variables to Test {vars.length > 0 && `(${vars.length})`}
+                          </summary>
+                          <div className="mt-3 pl-6 space-y-3">
+                            {/* Variable inputs — only shown when variables were extracted */}
+                            {vars.length > 0 ? (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                {vars.map(({ label, value }) => (
+                                  <div key={label} className="flex flex-col gap-1">
+                                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                                      {label}
+                                    </label>
+                                    <input
+                                      type="text"
+                                      defaultValue={value}
+                                      onChange={(e) => updateVariableEdit(timestamp, label, e.target.value)}
+                                      className="px-3 py-1.5 text-sm border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent transition-all"
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-slate-400 dark:text-slate-500 italic">
+                                No numeric variables detected. You can still re-run with the original scenario.
+                              </p>
+                            )}
+
+                            {/* Re-run / Reset buttons — always visible */}
+                            <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                              {(() => {
+                                const hasEdits = !!Object.keys(variableEditsById[timestamp] || {}).length;
+                                return (
+                                  <button
+                                    onClick={() => handleRerunScenario(result, timestamp)}
+                                    disabled={!hasEdits || rerunLoadingById[timestamp]}
+                                    className="flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 disabled:from-violet-300 disabled:to-purple-300 text-white rounded-xl font-medium text-sm transition-all duration-200 shadow-md hover:shadow-lg disabled:cursor-not-allowed"
+                                  >
+                                {rerunLoadingById[timestamp] ? (
+                                  <>
+                                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                                    Re-running...
+                                  </>
+                                ) : (
+                                  <>
+                                    <span>🔄</span>
+                                    Re-run This Scenario
+                                  </>
+                                )}
+                                  </button>
+                                );
+                              })()}
+                              <button
+                                onClick={() => handleResetScenario(timestamp)}
+                                className="flex items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl font-medium text-sm transition-all duration-200 shadow-sm hover:shadow-md"
+                              >
+                                <span>↩️</span>
+                                Reset to Original
+                              </button>
+                            </div>
+                          </div>
+                        </details>
+                      </div>
+                    );
+                  })()}
 
                   {/* Responsive Action Buttons */}
                   <div className="flex flex-col sm:flex-row justify-start gap-2 sm:gap-3 mt-4 pt-4 border-t border-slate-200/50 dark:border-slate-700/50">
@@ -724,13 +1340,20 @@ const handleExplainFurther = async (result, timestamp) => {
                       <div className="absolute inset-0 rounded-lg sm:rounded-xl bg-gradient-to-r from-amber-300/20 to-orange-300/20 opacity-0 group-hover:opacity-100 transition-opacity animate-pulse" />
                     </button>
                     
-                    {/* ✅ NEW: Save Button */}
+                    {/* Save Button -- locked when Free trials exhausted */}
                     <button
-                      aria-label={savedScenarioIds.has(timestamp) ? "Scenario already saved" : "Save scenario"}
+                      aria-label={
+                        trialsExhausted ? "Upgrade to save scenarios"
+                        : savedScenarioIds.has(timestamp) ? "Scenario already saved"
+                        : isFreePlan ? `Save scenario (${premiumTrialsLeft} free trial${premiumTrialsLeft !== 1 ? 's' : ''} left)`
+                        : "Save scenario"
+                      }
                       className={`group relative flex items-center justify-center gap-1 sm:gap-2 px-3 py-2 sm:px-4 sm:py-2 lg:px-5 lg:py-2.5 rounded-lg sm:rounded-xl font-medium text-xs sm:text-sm lg:text-base transition-all duration-200 transform hover:scale-105 shadow-md hover:shadow-lg flex-1 sm:flex-none ${
-                        savedScenarioIds.has(timestamp)
-                          ? 'bg-gradient-to-r from-emerald-500 to-green-500 text-white cursor-default'
-                          : 'bg-gradient-to-r from-amber-300 to-amber-500 hover:from-amber-400 hover:to-orange-600 text-white'
+                        trialsExhausted
+                          ? 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-pointer'
+                          : savedScenarioIds.has(timestamp)
+                            ? 'bg-gradient-to-r from-emerald-500 to-green-500 text-white cursor-default'
+                            : 'bg-gradient-to-r from-amber-300 to-amber-500 hover:from-amber-400 hover:to-orange-600 text-white'
                       }`}
                       onClick={() => {
                         if (savedScenarioIds.has(timestamp)) {
@@ -740,7 +1363,12 @@ const handleExplainFurther = async (result, timestamp) => {
                         }
                       }}
                     >
-                      {savedScenarioIds.has(timestamp) ? (
+                      {trialsExhausted ? (
+                        <>
+                          <FiLock className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" />
+                          <span className="whitespace-nowrap truncate">Save</span>
+                        </>
+                      ) : savedScenarioIds.has(timestamp) ? (
                         <>
                           <svg className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                             <path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z" />
@@ -752,7 +1380,9 @@ const handleExplainFurther = async (result, timestamp) => {
                           <svg className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
                           </svg>
-                          <span className="whitespace-nowrap truncate">Save</span>
+                          <span className="whitespace-nowrap truncate">
+                            {isFreePlan ? `Save (${premiumTrialsLeft} left)` : "Save"}
+                          </span>
                         </>
                       )}
                       <div className="absolute inset-0 rounded-lg sm:rounded-xl bg-gradient-to-r from-amber-300/20 to-orange-300/20 opacity-0 group-hover:opacity-100 transition-opacity animate-pulse" />
@@ -1067,10 +1697,16 @@ const handleExplainFurther = async (result, timestamp) => {
                             <h4 className="font-semibold text-blue-900 dark:text-blue-100 mb-3 text-base sm:text-lg">
                               Detailed Explanation
                             </h4>
-                            <div className="prose dark:prose-invert prose-blue max-w-none prose-sm sm:prose-base">
-                              <div className="text-blue-900 dark:text-blue-100 whitespace-pre-wrap leading-relaxed text-sm sm:text-base break-words">
-                                {formatNarrative(explanationModal.content, speechState.currentSentenceIndex, speechState.sentences)}
-                              </div>
+                            <div className="space-y-2">
+                              <FormattedResponse
+                                response={explanationModal.content}
+                                sectioned={true}
+                                currentSentenceText={
+                                  speechState.isSpeaking && speechState.currentSentenceIndex >= 0
+                                    ? speechState.sentences[speechState.currentSentenceIndex]
+                                    : null
+                                }
+                              />
                             </div>
                           </div>
                         </div>
@@ -1106,50 +1742,88 @@ const handleExplainFurther = async (result, timestamp) => {
                       
                       {/* Suggested Tags */}
                       {exportState.suggestedTags.length > 0 && (
-                        <div className="mb-4">
-                          <p className="text-sm font-medium text-emerald-800 dark:text-emerald-200 mb-2">Suggested Tags:</p>
+                        <div className="mb-5">
+                          <div className="flex items-center gap-2 mb-3">
+                            <span className="text-sm font-semibold text-emerald-800 dark:text-emerald-200">Smart Tags</span>
+                            <span className="text-xs text-slate-500 dark:text-slate-400">— click to add to export</span>
+                          </div>
                           <div className="flex flex-wrap gap-2">
-                            {exportState.suggestedTags.map((tag, index) => (
-                              <span
-                                key={index}
-                                className="px-2 sm:px-3 py-1 bg-emerald-100 dark:bg-emerald-800 text-emerald-800 dark:text-emerald-100 rounded-full text-xs sm:text-sm font-medium cursor-pointer hover:bg-emerald-200 dark:hover:bg-emerald-700 transition-colors break-words"
-                                onClick={() => {
-                                  const currentTags = exportState.customTags.split(',').map(t => t.trim()).filter(t => t);
-                                  if (!currentTags.includes(tag)) {
-                                    setExportState(prev => ({
-                                      ...prev,
-                                      customTags: currentTags.length > 0 ? `${exportState.customTags}, ${tag}` : tag
-                                    }));
-                                  }
-                                }}
-                              >
-                                {tag}
-                              </span>
-                            ))}
+                            {exportState.suggestedTags.map((tag, index) => {
+                              // Color-code by tag type
+                              const isAdded = exportState.customTags.includes(tag);
+                              const colorMap = {
+                                domain:    'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-700',
+                                type:      'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-700',
+                                outcome:   'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-700',
+                                risk:      'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 border-red-200 dark:border-red-700',
+                                time:      'bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-700',
+                                category:  'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-700',
+                              };
+                              const domainTags = ['#career','#finance','#startup','#business','#real-estate','#health','#relationships','#immigration','#education','#legal','#investment','#personal','#team','#marketing','#operations'];
+                              const typeTags   = ['#decision','#risk-analysis','#trade-off','#planning','#forecasting','#stress-test','#negotiation','#exit-strategy','#optimization','#validation'];
+                              const riskTags   = ['#high-risk','#low-risk','#high-stakes','#error','#needs-review','#irreversible'];
+                              const timeTags   = ['#urgent','#long-term','#short-term'];
+                              const outcomeTags= ['#high-confidence','#needs-clarity','#reversible'];
+                              const getColor = (t) => {
+                                if (riskTags.includes(t)) return colorMap.risk;
+                                if (timeTags.includes(t)) return colorMap.time;
+                                if (outcomeTags.includes(t)) return colorMap.outcome;
+                                if (typeTags.includes(t)) return colorMap.type;
+                                if (domainTags.includes(t)) return colorMap.domain;
+                                return colorMap.category;
+                              };
+                              return (
+                                <button
+                                  key={index}
+                                  onClick={() => {
+                                    if (!isAdded) {
+                                      const currentTags = exportState.customTags.split(',').map(t => t.trim()).filter(t => t);
+                                      setExportState(prev => ({
+                                        ...prev,
+                                        customTags: currentTags.length > 0 ? `${prev.customTags}, ${tag}` : tag
+                                      }));
+                                    }
+                                  }}
+                                  className={`px-3 py-1 rounded-full text-xs font-semibold border transition-all duration-150 ${getColor(tag)} ${isAdded ? 'opacity-50 cursor-default' : 'hover:opacity-80 cursor-pointer'}`}
+                                  title={isAdded ? 'Already added' : 'Click to add'}
+                                >
+                                  {tag}
+                                  {isAdded && <span className="ml-1 opacity-60">✓</span>}
+                                </button>
+                              );
+                            })}
                           </div>
                         </div>
                       )}
-                      
-                      {/* Custom Tags Input */}
+
+                      {/* Custom Tags Input — always visible, clean */}
                       <div className="mb-4">
-                        <button
-                          onClick={() => setExportState(prev => ({ ...prev, showTagInput: !prev.showTagInput }))}
-                          className="text-sm text-emerald-700 dark:text-emerald-300 hover:text-emerald-900 dark:hover:text-emerald-100 font-medium mb-2"
-                        >
-                          {exportState.showTagInput ? '− Hide' : '+ Add'} Custom Tags
-                        </button>
-                        {exportState.showTagInput && (
-                          <input
-                            type="text"
-                            placeholder="Add custom tags (comma-separated): #urgent, #follow-up"
-                            value={exportState.customTags}
-                            onChange={(e) => setExportState(prev => ({ ...prev, customTags: e.target.value }))}
-                            className="w-full px-3 py-2 border border-emerald-300 dark:border-emerald-600 rounded-lg bg-white dark:bg-slate-800 text-emerald-900 dark:text-emerald-100 text-sm"
-                          />
+                        <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide block mb-1.5">Custom Tags</label>
+                        <input
+                          type="text"
+                          placeholder="#my-tag, #follow-up, #Q2-review"
+                          value={exportState.customTags}
+                          onChange={(e) => setExportState(prev => ({ ...prev, customTags: e.target.value }))}
+                          className="w-full px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/50"
+                        />
+                        {exportState.customTags && (
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            {exportState.customTags.split(',').map(t => t.trim()).filter(t => t).map((t, i) => (
+                              <span key={i} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-full text-xs border border-slate-200 dark:border-slate-600">{t}</span>
+                            ))}
+                          </div>
                         )}
                       </div>
                       
-                      {/* Export Buttons */}
+                      {/* Export Buttons -- locked + counter when Free */}
+                      {trialsExhausted && (
+                        <div className="flex items-center gap-2 px-3 py-2 mb-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700">
+                          <FiLock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+                          <p className="text-xs text-amber-700 dark:text-amber-300">
+                            All {PREMIUM_TRIAL_LIMIT} free trials used. Upgrade to export.
+                          </p>
+                        </div>
+                      )}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <button
                           onClick={() => {
@@ -1157,9 +1831,16 @@ const handleExplainFurther = async (result, timestamp) => {
                             const result = rawResults[explanationModal.timestamp];
                             exportAsMarkdown(explanationModal.content, tags, result);
                           }}
-                          className="flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-600 hover:bg-slate-700 text-white rounded-lg font-medium transition-colors shadow-md hover:shadow-lg text-sm"
+                          className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-colors shadow-md hover:shadow-lg text-sm ${
+                            trialsExhausted
+                              ? 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-pointer hover:bg-slate-300 dark:hover:bg-slate-600'
+                              : 'bg-slate-600 hover:bg-slate-700 text-white'
+                          }`}
                         >
-                          📄 Export Markdown
+                          {trialsExhausted ? <FiLock className="w-4 h-4" /> : '📄'}
+                          <span>
+                            {isFreePlan && !trialsExhausted ? `Export Markdown (${premiumTrialsLeft} left)` : 'Export Markdown'}
+                          </span>
                         </button>
                         <button
                           onClick={() => {
@@ -1167,9 +1848,16 @@ const handleExplainFurther = async (result, timestamp) => {
                             const result = rawResults[explanationModal.timestamp];
                             exportAsPDF(explanationModal.content, tags, result);
                           }}
-                          className="flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors shadow-md hover:shadow-lg text-sm"
+                          className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-colors shadow-md hover:shadow-lg text-sm ${
+                            trialsExhausted
+                              ? 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-pointer hover:bg-slate-300 dark:hover:bg-slate-600'
+                              : 'bg-red-600 hover:bg-red-700 text-white'
+                          }`}
                         >
-                          📋 Export PDF
+                          {trialsExhausted ? <FiLock className="w-4 h-4" /> : '📋'}
+                          <span>
+                            {isFreePlan && !trialsExhausted ? `Export PDF (${premiumTrialsLeft} left)` : 'Export PDF'}
+                          </span>
                         </button>
                       </div>
                     </div>
@@ -1378,6 +2066,76 @@ function formatNarrative(content, currentSentenceIndex = -1, sentences = []) {
 }
 
 
+
+// Extract key variables from a scenario query string
+function extractVariables(query) {
+  if (!query) return [];
+  const found = [];
+  const seen = new Set();
+
+  const add = (label, value) => {
+    if (!seen.has(label)) {
+      seen.add(label);
+      found.push({ label, value });
+    }
+  };
+
+  // Currency amounts — e.g. "500k NGN", "$10,000", "₦2M", "200 USD"
+  const currencyRe = /([₦$£€]?\s?\d[\d,]*(?:\.\d+)?(?:\s?[kmb])?(?:\s?(?:NGN|USD|GBP|EUR|naira|dollars?))?(?:\s?(?:NGN|USD|GBP|EUR))?)/gi;
+  const currencyMatches = [...query.matchAll(currencyRe)];
+  currencyMatches.forEach(m => {
+    // Find context word before match (up to 4 words back)
+    const before = query.slice(0, m.index).trim().split(/\s+/).slice(-4).join(' ');
+    const contextWords = ['budget', 'revenue', 'investment', 'salary', 'cost', 'price', 'profit', 'loan', 'capital', 'spend', 'pay', 'fee', 'income', 'fund'];
+    const ctxWord = contextWords.find(w => before.toLowerCase().includes(w));
+    const label = ctxWord
+      ? ctxWord.charAt(0).toUpperCase() + ctxWord.slice(1)
+      : 'Amount';
+    add(label, m[0].trim());
+  });
+
+  // Time / duration — e.g. "6 months", "2 years", "3 weeks", "Q3"
+  const timeRe = /\b(\d+\s?(?:days?|weeks?|months?|years?|hrs?|hours?))\b/gi;
+  const timeMatches = [...query.matchAll(timeRe)];
+  timeMatches.forEach(m => {
+    const before = query.slice(0, m.index).trim().split(/\s+/).slice(-3).join(' ').toLowerCase();
+    const label = before.includes('target') || before.includes('goal') ? 'Target Timeline'
+      : before.includes('break') ? 'Break-even Period'
+      : 'Timeline';
+    add(label, m[0].trim());
+  });
+
+  // Percentages — e.g. "20%", "15 percent"
+  const pctRe = /\b(\d+(?:\.\d+)?(?:\s?%|\s?percent))\b/gi;
+  const pctMatches = [...query.matchAll(pctRe)];
+  pctMatches.forEach(m => {
+    const before = query.slice(0, m.index).trim().split(/\s+/).slice(-4).join(' ').toLowerCase();
+    const label = before.includes('growth') ? 'Growth Rate'
+      : before.includes('margin') ? 'Profit Margin'
+      : before.includes('interest') ? 'Interest Rate'
+      : before.includes('tax') ? 'Tax Rate'
+      : before.includes('discount') ? 'Discount Rate'
+      : 'Percentage';
+    add(label, m[0].trim());
+  });
+
+  // Staff / headcount — e.g. "5 staff", "10 employees", "3 workers"
+  const staffRe = /\b(\d+\s?(?:staff|employees?|workers?|people|persons?|team members?|hires?))\b/gi;
+  const staffMatches = [...query.matchAll(staffRe)];
+  staffMatches.forEach(m => add('Staffing', m[0].trim()));
+
+  // Locations / cities named after "in", "to", "at" (simple extraction)
+  const locationRe = /\b(?:in|to|at|expand(?:ing)? to|open(?:ing)? in)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/g;
+  const locMatches = [...query.matchAll(locationRe)];
+  locMatches.forEach(m => add('Location', m[1].trim()));
+
+  // Quantities / units — e.g. "200 units", "50 products"
+  const qtyRe = /\b(\d+\s?(?:units?|products?|items?|orders?|pieces?|SKUs?))\b/gi;
+  const qtyMatches = [...query.matchAll(qtyRe)];
+  qtyMatches.forEach(m => add('Quantity', m[0].trim()));
+
+  return found.slice(0, 6); // cap at 6 variables
+}
 
 function getNextStepSuggestion(content) {
   // Simple rule-based suggestion

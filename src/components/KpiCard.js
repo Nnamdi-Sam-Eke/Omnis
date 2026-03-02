@@ -34,7 +34,10 @@ const KpiCard = () => {
   const [totalSimulations, setTotalSimulations] = useState(null);
   const [activeUsers, setActiveUsers] = useState(null);
   const [avgAccuracy, setAvgAccuracy] = useState(null);
-  const [uptime, setUptime] = useState("99.99%");
+  // Uptime: current session elapsed + historical total from Firestore
+  const [uptime, setUptime] = useState("0h 0m");
+  const [sessionStart, setSessionStart] = useState(null);
+  const [historicalUptimeSeconds, setHistoricalUptimeSeconds] = useState(0);
   
   // New state for analytics cards
   const [totalSessionsToday, setTotalSessionsToday] = useState(0);
@@ -57,6 +60,8 @@ const KpiCard = () => {
     }
   };
 
+
+  
   // Auto-scroll feature
   const toggleAutoScroll = () => {
     setIsAutoScrolling(prev => !prev);
@@ -139,6 +144,82 @@ const fetchScenariosToday = async () => {
   useEffect(() => {
   fetchScenariosToday();
 }, [user]);
+
+  // ── Uptime Logic ──────────────────────────────────────────────────────────
+  // Step 1: Read the shared session start time written by GenerateUserNotification
+  //         (sessionStorage key: 'sessionLastLogin') so all components agree on
+  //         when this session began.
+  useEffect(() => {
+    const stored = sessionStorage.getItem('sessionLastLogin');
+    if (stored) {
+      setSessionStart(new Date(stored));
+    } else if (user?.metadata?.lastSignInTime) {
+      const fallback = new Date(user.metadata.lastSignInTime);
+      sessionStorage.setItem('sessionLastLogin', fallback.toISOString());
+      setSessionStart(fallback);
+    }
+  }, [user]);
+
+  // Step 2: Fetch the sum of all historical session durations from Firestore
+  //         (users/{uid}/sessions — same collection AnalyticsCard reads).
+  //         This gives cumulative uptime across ALL past sessions.
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    const fetchHistoricalUptime = async () => {
+      try {
+        const sessionsSnap = await getDocs(
+          query(
+            collection(db, 'users', user.uid, 'sessions'),
+            orderBy('start', 'asc')
+          )
+        );
+       let totalSeconds = 0;
+const currentId = sessionStorage.getItem("currentSessionId");
+
+sessionsSnap.docs.forEach(d => {
+  if (d.id === currentId) return; // ✅ exclude active session
+  const data = d.data();
+  if (data.duration && data.duration > 0) {
+    totalSeconds += data.duration;
+  }
+});
+
+        
+        setHistoricalUptimeSeconds(totalSeconds);
+      } catch (e) {
+        console.error('Error fetching historical uptime:', e);
+      }
+    };
+
+    fetchHistoricalUptime();
+  }, [user?.uid]);
+
+  // Step 3: Tick every second — current session elapsed + historical total → uptime display
+  useEffect(() => {
+    const formatUptime = (totalSeconds) => {
+      const h = Math.floor(totalSeconds / 3600);
+      const m = Math.floor((totalSeconds % 3600) / 60);
+      const s = totalSeconds % 60;
+      if (h > 0) return `${h}h ${m}m`;
+      if (m > 0) return `${m}m ${s}s`;
+      return `${s}s`;
+    };
+
+    const tick = () => {
+      const now = new Date();
+      const currentSessionSeconds = sessionStart
+        ? Math.floor((now - sessionStart) / 1000)
+        : 0;
+      const totalSeconds = historicalUptimeSeconds + currentSessionSeconds;
+      setUptime(formatUptime(totalSeconds));
+    };
+
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [sessionStart, historicalUptimeSeconds]);
+  // ── End Uptime Logic ───────────────────────────────────────────────────────
 
   // Fetch and set data from Firebase
   useEffect(() => {
@@ -297,30 +378,7 @@ const fetchScenariosToday = async () => {
 
   // KPI Cards Layout
   const cards = [
-    {
-      icon: <FiUser className="text-3xl md:text-4xl" />,
-      title: "Total Users",
-      value: formatNumber(totalUsers),
-      iconColor: "text-blue-500"
-    },
-    {
-      icon: <FiBarChart className="text-3xl md:text-4xl" />,
-      title: "Performance",
-      value: performanceStatus,
-      iconColor: "text-green-500"
-    },
-    {
-      icon: <FiClock className="text-3xl md:text-4xl" />,
-      title: "Last Activity",
-      value: lastActivity,
-      iconColor: "text-yellow-500"
-    },
-    {
-      icon: <FiSettings className="text-3xl md:text-4xl" />,
-      title: "System Status",
-      value: systemStatus,
-      iconColor: "text-red-500"
-    },
+    // ── Activity ─────────────────────────────────────────────────────────────
     {
       icon: <FiBarChart className="text-3xl md:text-4xl" />,
       title: "Scenarios Run Today",
@@ -334,23 +392,49 @@ const fetchScenariosToday = async () => {
       iconColor: "text-indigo-500"
     },
     {
+      icon: <FiCheckCircle className="text-3xl md:text-4xl" />,
+      title: "Avg. Accuracy",
+      value: avgAccuracy,
+      iconColor: "text-purple-500"
+    },
+    // ── Users ─────────────────────────────────────────────────────────────────
+    {
+      icon: <FiUser className="text-3xl md:text-4xl" />,
+      title: "Total Users",
+      value: formatNumber(totalUsers),
+      iconColor: "text-blue-500"
+    },
+    {
       icon: <FiTrendingUp className="text-3xl md:text-4xl" />,
       title: "Active Users",
       value: formatNumber(activeUsers),
       iconColor: "text-teal-500"
     },
     {
-      icon: <FiCheckCircle className="text-3xl md:text-4xl" />,
-      title: "Avg. Accuracy",
-      value: avgAccuracy,
-      iconColor: "text-purple-500"
+      icon: <FiClock className="text-3xl md:text-4xl" />,
+      title: "Last Activity",
+      value: lastActivity,
+      iconColor: "text-yellow-500"
     },
+    // ── System ────────────────────────────────────────────────────────────────
     {
       icon: <FiClock className="text-3xl md:text-4xl" />,
       title: "System Uptime",
       value: uptime,
       iconColor: "text-emerald-500"
-    }
+    },
+    {
+      icon: <FiBarChart className="text-3xl md:text-4xl" />,
+      title: "Performance",
+      value: performanceStatus,
+      iconColor: "text-green-500"
+    },
+    {
+      icon: <FiSettings className="text-3xl md:text-4xl" />,
+      title: "System Status",
+      value: systemStatus,
+      iconColor: "text-red-500"
+    },
   ];
 
   return (

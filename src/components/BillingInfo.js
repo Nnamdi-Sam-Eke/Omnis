@@ -1,167 +1,429 @@
-import React, { useState, useEffect } from "react";
-import { useStripe, useElements, CardElement } from "@stripe/react-stripe-js";
+// components/BillingInfo.js
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  addDoc,
+  collection,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  where,
+} from "firebase/firestore";
+import { useAuth } from "../AuthContext";
+import { db } from "../firebase";
 
-const CARD_ELEMENT_OPTIONS = {
-  style: {
-    base: {
-      fontSize: "16px",
-      color: "#32325d",
-      "::placeholder": {
-        color: "#a0aec0",
-      },
-      fontFamily: "Arial, sans-serif",
-      ":-webkit-autofill": {
-        color: "#32325d",
-      },
-    },
-    invalid: {
-      color: "#e53e3e",
-    },
+const PAYMENT_DESTINATIONS = {
+  naira: {
+    label: "₦ Naira Transfer (Nigeria)",
+    bankName: "YOUR_BANK_NAME",
+    accountName: "YOUR_ACCOUNT_NAME",
+    accountNumber: "YOUR_ACCOUNT_NUMBER",
+    notes: "Use your registered email as the transfer narration/reference.",
+  },
+  usd1: {
+    label: "$ USD Domiciliary (Account 1)",
+    bankName: "YOUR_BANK_NAME",
+    accountName: "YOUR_ACCOUNT_NAME",
+    accountNumber: "YOUR_ACCOUNT_NUMBER",
+    swiftOrRouting: "OPTIONAL_SWIFT_OR_ROUTING",
+    notes: "Use your registered email as the transfer narration/reference.",
+  },
+  usd2: {
+    label: "$ USD Domiciliary (Account 2)",
+    bankName: "YOUR_BANK_NAME",
+    accountName: "YOUR_ACCOUNT_NAME",
+    accountNumber: "YOUR_ACCOUNT_NUMBER",
+    swiftOrRouting: "OPTIONAL_SWIFT_OR_ROUTING",
+    notes: "Use your registered email as the transfer narration/reference.",
   },
 };
 
-const BillingInfo = ({ onSaveBillingInfo }) => {
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState("");
-  const [billingAddress, setBillingAddress] = useState("");
-  const [error, setError] = useState(null);
+const STATUS_STYLES = {
+  pending:
+    "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-700",
+  paid_pending_confirmation:
+    "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700",
+  approved:
+    "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-700",
+  rejected:
+    "bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700",
+  neutral:
+    "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
+};
 
-  const stripe = useStripe();
-  const elements = useElements();
+const Badge = ({ children, tone = "neutral" }) => (
+  <span
+    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border tracking-wide ${
+      STATUS_STYLES[tone] || STATUS_STYLES.neutral
+    }`}
+  >
+    {children}
+  </span>
+);
 
-  useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 3000);
-    return () => clearTimeout(timer);
-  }, []);
+const CopyRow = ({ label, value }) => {
+  const [copied, setCopied] = useState(false);
 
-  const handleSave = async () => {
-    if (!billingAddress) {
-      setToast("Please fill in the billing address.");
-      setTimeout(() => setToast(""), 3000);
-      return;
-    }
-
-    setSaving(true);
-    setError(null);
-
-    if (!stripe || !elements) {
-      setError("Stripe has not loaded yet.");
-      setSaving(false);
-      return;
-    }
-
-    const cardElement = elements.getElement(CardElement);
-
-    // Create payment method with Stripe
-    const { error: stripeError, paymentMethod } = await stripe.createPaymentMethod({
-      type: "card",
-      card: cardElement,
-      billing_details: {
-        address: {
-          line1: billingAddress,
-        },
-      },
-    });
-
-    if (stripeError) {
-      setError(stripeError.message);
-      setSaving(false);
-      return;
-    }
-
+  const doCopy = async () => {
     try {
-      // Pass paymentMethod.id and billingAddress to your backend or parent component
-      await onSaveBillingInfo({
-        paymentMethodId: paymentMethod.id,
-        billingAddress,
-      });
-      setToast("Billing info saved successfully!");
+      await navigator.clipboard.writeText(value || "");
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
     } catch {
-      setToast("Failed to save billing info.");
-    } finally {
-      setSaving(false);
-      setTimeout(() => setToast(""), 3000);
+      /* ignore */
     }
   };
 
-  async function onSaveBillingInfo({ paymentMethodId, billingAddress }) {
-  const response = await fetch("/api/save-payment-method", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      userId: "currentUserId", // get this from your auth/user context
-      paymentMethodId,
-      billingAddress,
-    }),
-  });
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 py-3 border-b border-slate-100 dark:border-slate-700/60 last:border-0">
+      <span className="text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500 min-w-[130px]">
+        {label}
+      </span>
+      <div className="flex items-center gap-2 flex-1 justify-end">
+        <code className="text-sm px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 break-all font-mono">
+          {value || "—"}
+        </code>
+        <button
+          onClick={doCopy}
+          type="button"
+          className={`min-w-[68px] px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 border ${
+            copied
+              ? "bg-emerald-500 border-emerald-500 text-white"
+              : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:border-slate-400 dark:hover:border-slate-400"
+          }`}
+        >
+          {copied ? "✓ Copied" : "Copy"}
+        </button>
+      </div>
+    </div>
+  );
+};
 
-  if (!response.ok) {
-    throw new Error("Failed to save billing info");
-  }
+const SectionCard = ({ children, className = "" }) => (
+  <div
+    className={`bg-white dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm ${className}`}
+  >
+    {children}
+  </div>
+);
 
-  const data = await response.json();
-  return data;
-}
+const BillingInfo = () => {
+  const { user } = useAuth();
+  const [toast, setToast] = useState(null); // { msg, type: 'success'|'error' }
+  const [loading, setLoading] = useState(true);
 
+  const [paymentChannel, setPaymentChannel] = useState("naira");
+  const [note, setNote] = useState("");
+  const [latestRequest, setLatestRequest] = useState(null);
+
+  const [submitting, setSubmitting] = useState(false);
+  const [submittingTier, setSubmittingTier] = useState(null); // "pro" | "enterprise" | null
+
+  const destination = useMemo(
+    () => PAYMENT_DESTINATIONS[paymentChannel],
+    [paymentChannel]
+  );
+
+  const showToast = (msg, type = "success") => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  useEffect(() => {
+    const t = setTimeout(() => setLoading(false), 600);
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    const qy = query(
+      collection(db, "upgradeRequests"),
+      where("userId", "==", user.uid),
+      orderBy("createdAt", "desc"),
+      limit(1)
+    );
+    const unsub = onSnapshot(qy, (snap) => {
+      const doc0 = snap.docs[0];
+      setLatestRequest(doc0 ? { id: doc0.id, ...doc0.data() } : null);
+    });
+    return () => unsub();
+  }, [user?.uid]);
+
+  const canRequest =
+    !!user?.uid &&
+    !submitting &&
+    !(
+      latestRequest &&
+      (latestRequest.status === "pending" ||
+        latestRequest.status === "paid_pending_confirmation")
+    );
+
+  const submitRequest = async (tierToRequest) => {
+    if (!user?.uid) {
+      showToast("Please log in first.", "error");
+      return;
+    }
+
+    if (!tierToRequest) {
+      showToast("Please choose a plan.", "error");
+      return;
+    }
+
+    setSubmitting(true);
+    setSubmittingTier(tierToRequest);
+
+    try {
+      await addDoc(collection(db, "upgradeRequests"), {
+        userId: user.uid,
+        email: user.email || null,
+        requestedTier: tierToRequest,
+        paymentChannel,
+        note: note?.trim() || null,
+        status: "pending",
+        createdAt: serverTimestamp(),
+      });
+
+      showToast("Request submitted. We'll contact you shortly.");
+      setNote("");
+    } catch (e) {
+      console.error(e);
+      showToast("Failed to submit request. Please try again.", "error");
+    } finally {
+      setSubmitting(false);
+      setSubmittingTier(null);
+    }
+  };
 
   if (loading) {
     return (
-      <div className="animate-pulse space-y-4">
-        <div className="h-10 bg-gray-300 dark:bg-gray-700 rounded" />
-        <div className="h-10 bg-gray-300 dark:bg-gray-700 rounded" />
-        <div className="h-12 bg-blue-300 dark:bg-blue-700 rounded" />
+      <div className="animate-pulse space-y-4 p-1">
+        <div className="h-10 bg-slate-200 dark:bg-slate-700 rounded-xl" />
+        <div className="h-36 bg-slate-200 dark:bg-slate-700 rounded-xl" />
+        <div className="h-14 bg-slate-200 dark:bg-slate-700 rounded-xl" />
       </div>
     );
   }
 
+  const latestTone =
+    latestRequest?.status === "pending"
+      ? "pending"
+      : latestRequest?.status === "approved"
+      ? "approved"
+      : latestRequest?.status === "paid_pending_confirmation"
+      ? "paid_pending_confirmation"
+      : latestRequest?.status === "rejected"
+      ? "rejected"
+      : "neutral";
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 relative">
+      {/* Toast */}
       {toast && (
-        <div className="fixed top-5 right-5 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50">
-          {toast}
-        </div>
-      )}
-
-      {error && (
-        <div className="mb-4 text-red-600 font-semibold">{error}</div>
-      )}
-
-      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border shadow-sm">
-        <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">
-          Payment Method
-        </h4>
-
-        <div className="p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700">
-          <CardElement options={CARD_ELEMENT_OPTIONS} />
-        </div>
-      </div>
-
-      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border shadow-sm">
-        <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">
-          Billing Address
-        </h4>
-
-        <input
-          id="billingAddress"
-          name="billingAddress"
-          type="text"
-          placeholder="123 Main St, City, State 12345"
-          value={billingAddress}
-          onChange={(e) => setBillingAddress(e.target.value)}
-          className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
-        />
-      </div>
-
-      <div className="flex justify-end">
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+        <div
+          className={`fixed top-5 right-5 z-50 flex items-center gap-3 px-5 py-3 rounded-xl shadow-lg text-sm font-medium border transition-all duration-300 ${
+            toast.type === "error"
+              ? "bg-red-50 border-red-200 text-red-800 dark:bg-red-900/40 dark:border-red-700 dark:text-red-200"
+              : "bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-900/40 dark:border-emerald-700 dark:text-emerald-200"
+          }`}
         >
-          {saving ? "Saving..." : "Save Billing Info"}
-        </button>
+          <span>{toast.type === "error" ? "✗" : "✓"}</span>
+          {toast.msg}
+        </div>
+      )}
+
+      {/* Payment Destinations */}
+      <SectionCard>
+        <div className="p-5 border-b border-slate-100 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h4 className="text-base font-semibold text-slate-900 dark:text-white">
+              Manual Billing
+            </h4>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Founding access — no Stripe required
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge tone="neutral">No Stripe</Badge>
+          </div>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+            Make a transfer using one of the options below, then submit an upgrade
+            request. We'll confirm and activate your plan manually.
+          </p>
+
+          {/* Channel selector */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <label className="text-xs font-semibold uppercase tracking-widest text-slate-400 whitespace-nowrap">
+              Payment Destination
+            </label>
+            <div className="flex gap-2 flex-wrap">
+              {Object.entries(PAYMENT_DESTINATIONS).map(([key]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setPaymentChannel(key)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                    paymentChannel === key
+                      ? "bg-slate-900 border-slate-900 text-white dark:bg-white dark:border-white dark:text-slate-900"
+                      : "bg-white border-slate-200 text-slate-600 hover:border-slate-400 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-300 dark:hover:border-slate-400"
+                  }`}
+                >
+                  {key === "naira" ? "₦ Naira" : key === "usd1" ? "$ USD (1)" : "$ USD (2)"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Account details */}
+          <div className="rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 p-4">
+            <div className="mb-3">
+              <Badge tone="neutral">{destination.label}</Badge>
+            </div>
+            <CopyRow label="Bank Name" value={destination.bankName} />
+            <CopyRow label="Account Name" value={destination.accountName} />
+            <CopyRow label="Account Number" value={destination.accountNumber} />
+            {destination.swiftOrRouting && (
+              <CopyRow label="SWIFT / Routing" value={destination.swiftOrRouting} />
+            )}
+            <div className="pt-3 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              <span className="font-semibold text-slate-700 dark:text-slate-300">
+                Reference:
+              </span>{" "}
+              Use your registered email{" "}
+              <span className="font-semibold text-slate-700 dark:text-slate-300">
+                ({user?.email || "your email"})
+              </span>{" "}
+              as the narration.
+            </div>
+          </div>
+        </div>
+      </SectionCard>
+
+      {/* Request Upgrade */}
+      <SectionCard>
+        <div className="p-5 border-b border-slate-100 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h4 className="text-base font-semibold text-slate-900 dark:text-white">
+              Request Upgrade
+            </h4>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Choose a plan after completing your transfer
+            </p>
+          </div>
+
+          {latestRequest?.status ? (
+            <Badge tone={latestTone}>
+              {String(latestRequest.status).replace(/_/g, " ")}
+            </Badge>
+          ) : (
+            <Badge tone="neutral">No requests yet</Badge>
+          )}
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* Note */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+              Note (optional)
+            </label>
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="e.g. paid via USD domiciliary"
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400 dark:focus:ring-slate-500"
+              type="text"
+            />
+            <p className="text-xs text-slate-400 dark:text-slate-500">
+              Helps us match your transfer faster.
+            </p>
+          </div>
+
+          {/* Plan buttons (moved here from Subscription UX) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            <button
+  type="button"
+  onClick={() => submitRequest("pro")}
+  disabled={!canRequest}
+  className="group text-left p-4 rounded-2xl border border-blue-200 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+>
+  <div className="flex items-center justify-between gap-3">
+    <div>
+      <div className="text-sm font-semibold text-blue-900 dark:text-blue-300">
+        Pro Plan
       </div>
+      <div className="text-xs text-blue-700 dark:text-blue-400 mt-0.5">
+        30 days access • Manual activation
+      </div>
+    </div>
+    <div className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-blue-600 text-white group-hover:bg-blue-700 transition">
+      {submitting && submittingTier === "pro" ? "Submitting…" : "Request Pro"}
+    </div>
+  </div>
+</button>
+
+           <button
+  type="button"
+  onClick={() => submitRequest("enterprise")}
+  disabled={!canRequest}
+  className="group text-left p-4 rounded-2xl border border-purple-200 dark:border-purple-700 bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+>
+  <div className="flex items-center justify-between gap-3">
+    <div>
+      <div className="text-sm font-semibold text-purple-900 dark:text-purple-300">
+        Enterprise Plan
+      </div>
+      <div className="text-xs text-purple-700 dark:text-purple-400 mt-0.5">
+        30 days access • Priority support
+      </div>
+    </div>
+    <div className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-purple-600 text-white group-hover:bg-purple-700 transition">
+      {submitting && submittingTier === "enterprise"
+        ? "Submitting…"
+        : "Request Enterprise"}
+    </div>
+  </div>
+</button>
+          </div>
+
+          <div className="text-xs text-slate-500 dark:text-slate-400 pt-1">
+            Logged in as{" "}
+            <span className="font-semibold text-slate-700 dark:text-slate-300">
+              {user?.email || "—"}
+            </span>
+          </div>
+
+          {latestRequest?.status === "pending" && (
+            <div className="flex gap-3 p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+              <span className="text-amber-500 text-base mt-0.5">⏳</span>
+              <p className="text-sm text-amber-800 dark:text-amber-200">
+                Your request is pending. Once your payment is confirmed, your tier
+                will be activated.
+              </p>
+            </div>
+          )}
+
+          {latestRequest?.status === "paid_pending_confirmation" && (
+            <div className="flex gap-3 p-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+              <span className="text-blue-500 text-base mt-0.5">🔎</span>
+              <p className="text-sm text-blue-800 dark:text-blue-200">
+                We’ve received your payment signal and are confirming it. You’ll be
+                upgraded once verified.
+              </p>
+            </div>
+          )}
+
+          {!canRequest &&
+            (latestRequest?.status === "pending" ||
+              latestRequest?.status === "paid_pending_confirmation") && (
+              <p className="text-xs text-slate-400 dark:text-slate-500">
+                You already have an active request. Please wait for confirmation.
+              </p>
+            )}
+        </div>
+      </SectionCard>
     </div>
   );
 };

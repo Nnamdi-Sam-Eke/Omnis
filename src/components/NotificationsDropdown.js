@@ -10,7 +10,9 @@ import {
   onSnapshot,
   doc,
   getDoc,
-  updateDoc
+  updateDoc,
+  addDoc,
+  serverTimestamp,
 } from "firebase/firestore";
 import { useAuth } from "../AuthContext";
 import { 
@@ -22,6 +24,8 @@ import {
 import moment from "moment";
 import { Bell, Dot, X, Minus, Plus, ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
+
+const AUTO_DISMISS_MS = 7000;
 
 export default function NotificationDropdown() {
   const { user } = useAuth();
@@ -35,6 +39,128 @@ export default function NotificationDropdown() {
   const position = useRef({ x: 0, y: 0 });
   const offset = useRef({ x: 0, y: 0 });
   const hasCheckedTierChange = useRef(false);
+  const dismissTimerRef = useRef(null);
+  const isHoveredRef = useRef(false);
+
+  // ── Auto-dismiss ──────────────────────────────────────────────────────────
+  const clearTimers = () => {
+    clearTimeout(dismissTimerRef.current);
+  };
+
+  const startDismissTimer = () => {
+    clearTimers();
+
+    dismissTimerRef.current = setTimeout(() => {
+      setIsOpen(false);
+    }, AUTO_DISMISS_MS);
+  };
+
+  // Start timer when opened, clear when closed
+  useEffect(() => {
+    if (isOpen) {
+      startDismissTimer();
+    } else {
+      clearTimers();
+    }
+    return () => clearTimers();
+  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Pause on hover, resume on leave
+  const handleMouseEnter = () => {
+    isHoveredRef.current = true;
+    clearTimers();
+  };
+
+  const handleMouseLeave = () => {
+    isHoveredRef.current = false;
+    if (isOpen) startDismissTimer();
+  };
+
+
+  useEffect(() => {
+  if (!user?.uid) return;
+
+  const userRef = doc(db, "users", user.uid);
+
+  const normalizeTier = (t) => {
+    if (!t) return "Free";
+    const s = String(t).trim().toLowerCase();
+    if (s === "free") return "Free";
+    if (s === "pro") return "Pro";
+    if (s === "enterprise") return "Enterprise";
+    return "Free";
+  };
+
+  const rank = { Free: 0, Pro: 1, Enterprise: 2 };
+
+  let isProcessing = false;
+
+  const unsub = onSnapshot(userRef, async (snap) => {
+    if (!snap.exists()) return;
+
+    const data = snap.data();
+    const currentTier = normalizeTier(data.tier);
+
+    const storageKey = `lastKnownTier_${user.uid}`;
+    const prevTierStored = localStorage.getItem(storageKey);
+
+    // first run: just store and exit
+    if (!prevTierStored) {
+      localStorage.setItem(storageKey, currentTier);
+      return;
+    }
+
+    const prevTier = normalizeTier(prevTierStored);
+
+    if (prevTier === currentTier) return;
+    if (isProcessing) return;
+
+    isProcessing = true;
+
+    try {
+      const isUpgrade = (rank[currentTier] || 0) > (rank[prevTier] || 0);
+
+      // 1) create persistent notification in Firestore
+      await addDoc(collection(db, "notifications"), {
+        userId: user.uid,
+        title: isUpgrade ? "Plan Upgraded" : "Plan Downgraded",
+        activityType: isUpgrade ? "Plan Upgraded" : "Plan Downgraded",
+        message: `You ${isUpgrade ? "upgraded" : "downgraded"} your plan from ${prevTier} to ${currentTier}`,
+        description: `Plan ${isUpgrade ? "upgraded" : "downgraded"} from ${prevTier} to ${currentTier}`,
+        type: isUpgrade ? "success" : "alert",
+        timestamp: serverTimestamp(),
+        read: false,
+        source: "system",
+        isPersistent: true,
+        isTierChange: true,
+        tierChangeDetails: {
+          from: prevTier,
+          to: currentTier,
+          changeType: isUpgrade ? "upgrade" : "downgrade",
+        },
+      });
+
+      // 2) update user doc so synthetic generators still work too
+      await updateDoc(userRef, {
+        [isUpgrade ? "planUpgraded" : "planDowngraded"]: {
+          from: prevTier,
+          to: currentTier,
+          timestamp: serverTimestamp(),
+        },
+      });
+
+      // 3) update localStorage so it doesn’t re-fire
+      localStorage.setItem(storageKey, currentTier);
+    } catch (e) {
+      console.error("Tier change detector failed:", e);
+      // don’t update storageKey on failure → it will retry next snapshot
+    } finally {
+      isProcessing = false;
+    }
+  });
+
+  return () => unsub();
+}, [user?.uid]);
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -218,9 +344,11 @@ export default function NotificationDropdown() {
             scale: { duration: 0.3 }
           }}
           className="fixed top-[100px] right-4 sm:right-10 w-[90vw] max-w-sm sm:max-w-md z-50"
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
         >
           {/* Glassmorphism container */}
-          <div className="relative backdrop-blur-xl bg-white/80 dark:bg-gray-900/80 border border-white/20 dark:border-gray-700/50 rounded-2xl shadow-2xl">
+          <div className="relative backdrop-blur-xl bg-white/80 dark:bg-gray-900/80 border border-white/20 dark:border-gray-700/50 rounded-2xl shadow-2xl overflow-hidden">
             {/* Gradient overlay */}
             <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent rounded-2xl pointer-events-none" />
             

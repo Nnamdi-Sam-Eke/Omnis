@@ -1,21 +1,28 @@
+
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, useLocation, Navigate, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './AuthContext';
 import { toast, Toaster } from 'react-hot-toast';
 import { signOut } from "firebase/auth";
 import { auth, db, messaging } from "./firebase";
-import { doc, getDoc, updateDoc, Timestamp } from "firebase/firestore";
+import { doc, getDoc, updateDoc, Timestamp, deleteField } from "firebase/firestore";
 import { onMessage } from "firebase/messaging";
-import SessionTracker from './components/SessionTracker';
+import {
+  collection,
+  addDoc,
+  serverTimestamp,
+  onSnapshot
+} from "firebase/firestore";
+
 // Pages
 import OnboardingContainer from './components/onboarding/OnboardingContainer';
 import SplashScreen from './components/SplashScreen';
 // import Home from './pages/Home';
-import PartnerChat from './pages/PartnerChat';
+// import PartnerChat from './pages/PartnerChat';
 import SavedScenarios from './pages/SavedScenarios';
 import Support from './pages/Support';
 import PaymentsPage from './pages/PaymentsPage';
-import ResourcesPage from './pages/ResourcesPage';
+// import ResourcesPage from './pages/ResourcesPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import ScenarioTabs from './pages/ScenarioTabs';
 import OmnisDashboard from './pages/OmnisDashboard';
@@ -31,10 +38,10 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { OmnisProvider } from './context/OmnisContext';
 import { MemoryProvider } from './MemoryContext';
 import { AccountProvider } from './AccountContext';
+import { NotificationsProvider } from './context/NotificationsContext';
 import AuthForm from './components/AuthForm';
 import ProfilePage from './components/SimpleProfilePage';
 import AccountPage from './pages/ProfilePage';
-import StripeProvider from './StripeProvider';
 import UpgradeModal from './components/UpgradeModal';
 import './App.css';
 import useIdleTimer from './hooks/useIdleTimer';
@@ -50,7 +57,7 @@ const PrivateRoute = ({ children }) => {
 const PublicRoute = ({ children }) => {
   const { user, loading } = useAuth();
   if (loading) return <div>Loading...</div>;
-  return !user ? children : <Navigate to="/dashboard" />;
+  return !user ? children : <Navigate to="/overview" />;
 };
 
 const noLayoutRoutes = ['/login', '/onboarding'];
@@ -91,93 +98,122 @@ const AppContent = () => {
     },
   });
 
-  // ⚡ Upgrade Modal Logic
+  // 🔥 Global Tier Change Detector + Expiry Engine (UPGRADED)
   useEffect(() => {
-    async function checkUpgradeModal() {
-      if (!user || !user.uid || !user.tier) return;
+    if (!user?.uid) return;
 
-      const tier = user.tier.toLowerCase();
-      const userRef = doc(db, 'users', user.uid);
-      const userSnap = await getDoc(userRef);
+    const userRef = doc(db, "users", user.uid);
 
-      if (!userSnap.exists()) return;
+    const normalizeTier = (t) => {
+      if (!t) return "Free";
+      const s = String(t).trim().toLowerCase();
+      if (s === "free") return "Free";
+      if (s === "pro") return "Pro";
+      if (s === "enterprise") return "Enterprise";
+      return "Free";
+    };
 
-      const data = userSnap.data();
+    const rank = { Free: 0, Pro: 1, Enterprise: 2 };
+
+    let isProcessing = false;
+
+    const unsub = onSnapshot(userRef, async (snap) => {
+      if (!snap.exists()) return;
+
+      const data = snap.data();
+      const currentTier = normalizeTier(data.tier);
+
+      // -------------------------------
+      // ✅ AUTO-DOWNGRADE ON EXPIRY
+      // If Pro/Enterprise and subscriptionExpiry passed,
+      // set tier back to Free, mark reason as expiry, and stop.
+      // -------------------------------
       const expiryTimestamp = data.subscriptionExpiry;
-      const lastModalTimestamp = data.lastUpgradeModalShown;
-      const now = new Date();
+      const expiryDate = expiryTimestamp?.toDate
+        ? expiryTimestamp.toDate()
+        : expiryTimestamp
+        ? new Date(expiryTimestamp)
+        : null;
 
-      const isFree = tier === 'free';
-      const isPro = tier === 'pro';
-      const isEnterprise = tier === 'enterprise';
+      const isPaidTierNow = currentTier === "Pro" || currentTier === "Enterprise";
+      const isExpired = isPaidTierNow && expiryDate && new Date() > expiryDate;
 
-      let isExpired = false;
-      if ((isPro || isEnterprise) && expiryTimestamp) {
-        const expiryDate = expiryTimestamp.toDate ? expiryTimestamp.toDate() : new Date(expiryTimestamp);
-        if (now > expiryDate) isExpired = true;
-      }
+      const expiryAlreadyHandled = !!data.expiryHandledAt;
 
-      if (isFree || isExpired) {
-        if (!lastModalTimestamp) {
-          setShowUpgradeModal(true);
-          await updateDoc(userRef, { lastUpgradeModalShown: Timestamp.now() });
-          return;
+      if (isExpired && !expiryAlreadyHandled) {
+        try {
+          await updateDoc(userRef, {
+            tier: "Free",
+            tierChangeReason: "expiry",
+            expiredFromTier: currentTier,
+            expiryHandledAt: serverTimestamp(),
+            lastSubscriptionExpiry: expiryTimestamp || null,
+            subscriptionExpiry: null,
+            expirySetForTier: "Free",
+          });
+        } catch (e) {
+          console.error("Auto-expiry downgrade failed:", e);
         }
+        return; // important: next snapshot will handle notifications for tier change
+      }
 
-        const lastShownDate = lastModalTimestamp.toDate ? lastModalTimestamp.toDate() : new Date(lastModalTimestamp);
-        const diffInHours = (now - lastShownDate) / (1000 * 60 * 60);
+      // -------------------------------
+      // ✅ TIER CHANGE DETECTION
+      // -------------------------------
+      const storageKey = `lastKnownTier_${user.uid}`;
+      const previousTier = localStorage.getItem(storageKey);
 
-        if (diffInHours >= 2) {
-          setShowUpgradeModal(true);
-          await updateDoc(userRef, { lastUpgradeModalShown: Timestamp.now() });
-        } else {
-          setShowUpgradeModal(false);
-        }
+      // first run: just store tier
+      if (!previousTier) {
+        localStorage.setItem(storageKey, currentTier);
         return;
       }
 
-      if ((isPro || isEnterprise) && !isExpired) {
-        setShowUpgradeModal(false);
-        return;
+      if (previousTier === currentTier || isProcessing) return;
+
+      isProcessing = true;
+      try {
+        const isUpgrade = rank[currentTier] > rank[previousTier];
+
+        await addDoc(collection(db, "notifications"), {
+          userId: user.uid,
+          title: isUpgrade ? "Plan Upgraded" : "Plan Downgraded",
+          activityType: isUpgrade ? "Plan Upgraded" : "Plan Downgraded",
+          message: `You ${isUpgrade ? "upgraded" : "downgraded"} your plan from ${previousTier} to ${currentTier}`,
+          description: `Plan ${isUpgrade ? "upgraded" : "downgraded"} from ${previousTier} to ${currentTier}`,
+          type: isUpgrade ? "success" : "alert",
+          timestamp: serverTimestamp(),
+          read: false,
+          source: "system",
+          isPersistent: true,
+          isTierChange: true,
+          tierChangeDetails: {
+            from: previousTier,
+            to: currentTier,
+            changeType: isUpgrade ? "upgrade" : "downgrade",
+          },
+        });
+
+        await updateDoc(userRef, {
+          [isUpgrade ? "planUpgraded" : "planDowngraded"]: {
+            from: previousTier,
+            to: currentTier,
+            timestamp: serverTimestamp(),
+          },
+        });
+
+        localStorage.setItem(storageKey, currentTier);
+      } catch (e) {
+        console.error("Tier change detector failed:", e);
+      } finally {
+        isProcessing = false;
       }
-
-      if (!lastModalTimestamp) {
-        setShowUpgradeModal(true);
-        await updateDoc(userRef, { lastUpgradeModalShown: Timestamp.now() });
-        return;
-      }
-
-      const lastShownDate = lastModalTimestamp.toDate ? lastModalTimestamp.toDate() : new Date(lastModalTimestamp);
-      const diffInDays = (now - lastShownDate) / (1000 * 60 * 60 * 24);
-
-      if (diffInDays >= 30) {
-        setShowUpgradeModal(true);
-        await updateDoc(userRef, { lastUpgradeModalShown: Timestamp.now() });
-      } else {
-        setShowUpgradeModal(false);
-      }
-    }
-
-    checkUpgradeModal();
-  }, [user]);
-
-  // ✅ Handle incoming push notifications
-  useEffect(() => {
-    if (!messaging) return;
-
-    const unsubscribe = onMessage(messaging, (payload) => {
-      console.log("Push notification received:", payload);
-
-      // Show in-app toast
-      toast(payload.notification?.title || "New Notification", {
-        description: payload.notification?.body,
-      });
     });
 
-    return () => unsubscribe();
-  }, []);
+    return () => unsub();
+  }, [user?.uid]);
 
-  // Splash logic
+  // Initial splash screen
   useEffect(() => {
     const timer = setTimeout(() => setInitialSplashDone(true), 7000);
     return () => clearTimeout(timer);
@@ -209,36 +245,36 @@ const AppContent = () => {
   if (hideLayout) {
     return (
       <AccountProvider>
+        <NotificationsProvider>
         <OmnisProvider>
           <MemoryProvider>
-            <StripeProvider>
-              <Routes>
-                <Route path="/onboarding" element={<PrivateRoute><OnboardingContainer /></PrivateRoute>} />
-                <Route path="/login" element={<PublicRoute><AuthForm /></PublicRoute>} />
-              </Routes>
-            </StripeProvider>
+
+            <Routes>
+              <Route path="/onboarding" element={<PrivateRoute><OnboardingContainer /></PrivateRoute>} />
+              <Route path="/login" element={<PublicRoute><AuthForm /></PublicRoute>} />
+            </Routes>
+
           </MemoryProvider>
         </OmnisProvider>
+        </NotificationsProvider>
       </AccountProvider>
     );
   }
 
   // --- DEFAULT LAYOUT WITH RESPONSIVE PADDING ---
   return (
-    <div className="scale-75 origin-top-left w-[133.33%]">
-      <div className="min-h-screen w-full bg-white dark:bg-gray-900">
-      
+    <div style={{ zoom: '75%' }} className="min-h-screen w-full bg-white dark:bg-gray-900">
 
         {/* ✅ FIXED: Responsive padding - none on mobile, dynamic on desktop */}
         <main
-  className={`min-h-screen bg-white dark:bg-gray-900 pt-20
-    transition-all duration-300 ease-in-out
-    ${isSidebarHovered ? 'lg:pl-64' : 'lg:pl-20'}
-    w-full`}
->
+          className={`min-h-screen bg-white dark:bg-gray-900 pt-20
+            transition-all duration-300 ease-in-out
+            ${isSidebarHovered ? 'lg:pl-64' : 'lg:pl-20'}
+            w-full`}
+        >
           {/* ✅ FIXED: Container with responsive padding and max-width */}
-           <div className="w-full px-0 sm:px-4 lg:px-0 transition-all duration-300 ease-in-out">
-   
+          <div className="w-full px-0 sm:px-4 lg:px-0 transition-all duration-300 ease-in-out">
+
             <AccountProvider>
               {/* ✅ Correct placement */}
               <Toaster position="top-right" />
@@ -256,55 +292,55 @@ const AppContent = () => {
                   <Sidebar
                     isSidebarOpen={isSidebarOpen}
                     setIsSidebarOpen={setIsSidebarOpen}
-                    handleLogout={handleLogout}
                     onHoverChange={setIsSidebarHovered}
                   />
                 </>
               )}
 
+             <NotificationsProvider>
               <OmnisProvider>
                 <MemoryProvider>
-                  <StripeProvider>
-                    <SessionTracker />
 
-                    <WarningModal
-                      isOpen={idle.isWarning}
-                      secondsLeft={idle.secondsLeft}
-                      onStay={() => idle.stay()}
-                      onLogout={() => {
-                        try { localStorage.setItem('idleLoggedOut', '1'); } catch (e) {}
-                        signOut(auth).catch(err => console.error('Idle signOut error', err));
-                        navigate('/login');
-                      }}
-                    />
-                    {/* ✅ Content container with smooth compression */}
-                    <div className="w-full transition-all duration-300 ease-in-out">
-                      <Routes>
-                        <Route path="/onboarding" element={<PrivateRoute><OnboardingContainer /></PrivateRoute>} />
-                        <Route path="/login" element={<PublicRoute><AuthForm /></PublicRoute>} />
-                        <Route path="/" element={<PrivateRoute><OmnisDashboard /></PrivateRoute>} />
-                        {/* <Route path="/home" element={<PrivateRoute><Home /></PrivateRoute>} /> */}
-                        <Route path="/overview" element={<PrivateRoute><OmnisDashboard /></PrivateRoute>} />
-                        {/* <Route path="/partner-chat" element={<PrivateRoute><PartnerChat /></PrivateRoute>} /> */}
-                        <Route path="/saved-scenarios" element={<PrivateRoute><SavedScenarios /></PrivateRoute>} />
-                        <Route path="/support" element={<PrivateRoute><Support /></PrivateRoute>} />
-                        <Route path="/activity-log" element={<PrivateRoute><ActivityLog /></PrivateRoute>} />
-                        {/* <Route path="/resources" element={<PrivateRoute><ResourcesPage /></PrivateRoute>} /> */}
-                        <Route path="/new-scenario" element={<PrivateRoute><ScenarioTabs /></PrivateRoute>} />
-                        <Route path="/analytics" element={<PrivateRoute><AnalyticsPage /></PrivateRoute>} />
-                        <Route path="/payments" element={<PrivateRoute><PaymentsPage /></PrivateRoute>} />
-                        <Route path="/notifications" element={<PrivateRoute><NotificationsPage /></PrivateRoute>} />
-                        <Route path="/account" element={<PrivateRoute><AccountPage /></PrivateRoute>} />
-                        <Route path="/profile" element={<PrivateRoute><ProfilePage /></PrivateRoute>} />
-                      </Routes>
-                    </div>
+                  <WarningModal
+                    isOpen={idle.isWarning}
+                    secondsLeft={idle.secondsLeft}
+                    onStay={() => idle.stay()}
+                    onLogout={() => {
+                      try { localStorage.setItem('idleLoggedOut', '1'); } catch (e) {}
+                      signOut(auth).catch(err => console.error('Idle signOut error', err));
+                      navigate('/login');
+                    }}
+                  />
 
-                    {showUpgradeModal && (location.pathname === '/dashboard' || location.pathname === '/') && (
-                      <UpgradeModal onClose={() => setShowUpgradeModal(false)} />
-                    )}
-                  </StripeProvider>
+                  {/* ✅ Content container with smooth compression */}
+                  <div className="w-full transition-all duration-300 ease-in-out">
+                    <Routes>
+                      <Route path="/onboarding" element={<PrivateRoute><OnboardingContainer /></PrivateRoute>} />
+                      <Route path="/login" element={<PublicRoute><AuthForm /></PublicRoute>} />
+                      <Route path="/" element={<PrivateRoute><OmnisDashboard /></PrivateRoute>} />
+                      {/* <Route path="/home" element={<PrivateRoute><Home /></PrivateRoute>} /> */}
+                      <Route path="/overview" element={<PrivateRoute><OmnisDashboard /></PrivateRoute>} />
+                      {/* <Route path="/partner-chat" element={<PrivateRoute><PartnerChat /></PrivateRoute>} /> */}
+                      <Route path="/saved-scenarios" element={<PrivateRoute><SavedScenarios /></PrivateRoute>} />
+                      <Route path="/support" element={<PrivateRoute><Support /></PrivateRoute>} />
+                      <Route path="/activity-log" element={<PrivateRoute><ActivityLog /></PrivateRoute>} />
+                      {/* <Route path="/resources" element={<PrivateRoute><ResourcesPage /></PrivateRoute>} /> */}
+                      <Route path="/new-scenario" element={<PrivateRoute><ScenarioTabs /></PrivateRoute>} />
+                      <Route path="/analytics" element={<PrivateRoute><AnalyticsPage /></PrivateRoute>} />
+                      <Route path="/payments" element={<PrivateRoute><PaymentsPage /></PrivateRoute>} />
+                      <Route path="/notifications" element={<PrivateRoute><NotificationsPage /></PrivateRoute>} />
+                      <Route path="/account" element={<PrivateRoute><AccountPage /></PrivateRoute>} />
+                      <Route path="/profile" element={<PrivateRoute><ProfilePage /></PrivateRoute>} />
+                    </Routes>
+                  </div>
+
+                  {showUpgradeModal && (location.pathname === '/dashboard' || location.pathname === '/') && (
+                    <UpgradeModal onClose={() => setShowUpgradeModal(false)} />
+                  )}
+
                 </MemoryProvider>
               </OmnisProvider>
+              </NotificationsProvider>
 
               {!hideLayout && <Footer />}
               {!hideLayout && <CreatorsCorner />}
@@ -313,16 +349,17 @@ const AppContent = () => {
           </div>
         </main>
       </div>
-    </div>
   );
 }
 
 export default function App() {
   return (
     <ErrorBoundary>
-      <AuthProvider>
-        <AppContent />
-      </AuthProvider>
+      <NotificationsProvider>
+        <AuthProvider>
+          <AppContent />
+        </AuthProvider>
+      </NotificationsProvider>
     </ErrorBoundary>
   );
 }

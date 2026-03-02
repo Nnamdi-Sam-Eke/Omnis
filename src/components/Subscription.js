@@ -1,237 +1,210 @@
-// File: components/SubscriptionInfo.jsx
-import React, { useEffect, useState } from "react";
-import { getFunctions, httpsCallable } from "firebase/functions";
+// components/Subscription.js
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  collection,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  where,
+} from "firebase/firestore";
 import { useAuth } from "../AuthContext";
-import { 
-  recordTierChange, 
-  checkAndRecordTierChange,
-  getTierChangeNotifications 
-} from "../services/tierChangeService";
-import { getUserTier, updateUserTier } from "../services/firestoreService";
+import { db } from "../firebase";
 
-const SubscriptionInfo = ({ userDetails, discountActive }) => {
-  const [loading, setLoading] = useState(true);
-  const [upgradeInProgress, setUpgradeInProgress] = useState(false);
-  const [downgradeInProgress, setDowngradeInProgress] = useState(false);
-  const functions = getFunctions();
+const formatDate = (tsLike) => {
+  try {
+    if (!tsLike) return null;
+    if (typeof tsLike?.toDate === "function") return tsLike.toDate().toLocaleDateString();
+    if (tsLike instanceof Date) return tsLike.toLocaleDateString();
+    return String(tsLike);
+  } catch {
+    return null;
+  }
+};
+
+const TIER_STYLES = {
+  Free: "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-600",
+  Pro: "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700",
+  Enterprise: "bg-violet-100 text-violet-800 border-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:border-violet-700",
+};
+
+const TierBadge = ({ tier }) => (
+  <span
+    className={`inline-flex items-center px-3 py-1 rounded-md text-xs font-semibold border tracking-wide ${
+      TIER_STYLES[tier] || TIER_STYLES.Free
+    }`}
+  >
+    {tier}
+  </span>
+);
+
+const StatusDot = ({ status }) => {
+  const color =
+    status === "pending" ? "bg-amber-400" :
+    status === "approved" ? "bg-emerald-400" :
+    status === "rejected" ? "bg-red-400" :
+    "bg-slate-400";
+  return <span className={`inline-block w-2 h-2 rounded-full ${color}`} />;
+};
+
+const SectionCard = ({ children, className = "" }) => (
+  <div className={`bg-white dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm ${className}`}>
+    {children}
+  </div>
+);
+
+/**
+ * SubscriptionInfo (read-only)
+ * - Shows current tier + expiry
+ * - Shows latest upgrade request status
+ * - One CTA to go to Billing Info (the only place that submits upgrade requests)
+ */
+const SubscriptionInfo = ({ onGoToBilling }) => {
   const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [latestRequest, setLatestRequest] = useState(null);
+
+  const currentTier = useMemo(() => (user?.tier || "Free").toString(), [user?.tier]);
+  const expiry = useMemo(() => formatDate(user?.subscriptionExpiry), [user?.subscriptionExpiry]);
 
   useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 3000);
+    const timer = setTimeout(() => setLoading(false), 600);
     return () => clearTimeout(timer);
   }, []);
 
-  // 🔁 Optional: Firebase Functions fallback checkout (if needed)
-  const handleCheckout = async (priceId) => {
-    const createSession = httpsCallable(functions, "createCheckoutSession");
-    const { data } = await createSession({
-      priceId,
-      successUrl: window.location.href + "?subscribed=true",
-      cancelUrl: window.location.href,
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    const qy = query(
+      collection(db, "upgradeRequests"),
+      where("userId", "==", user.uid),
+      orderBy("createdAt", "desc"),
+      limit(1)
+    );
+
+    const unsub = onSnapshot(qy, (snap) => {
+      const doc0 = snap.docs[0];
+      setLatestRequest(doc0 ? { id: doc0.id, ...doc0.data() } : null);
     });
-    console.log("Checkout session created:", data);
-  };
 
-  // ✅ Main Stripe API-based upgrade handler
-  const handleUpgrade = async (targetTier, priceId) => {
-    if (!user) {
-      alert("User not logged in.");
-      return;
-    }
-
-    setUpgradeInProgress(true);
-
-    try {
-      // Get the current tier before upgrade
-      const currentTier = user?.tier || "Free";
-
-      // Initiate Stripe checkout
-      const res = await fetch("/api/create-checkout-session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: user.uid, email: user.email, priceId })
-      });
-
-      const data = await res.json();
-      
-      if (data?.url) {
-        // Record the pending tier change BEFORE redirection
-        // This ensures the notification is created even if Stripe flow takes time
-        if (currentTier !== targetTier) {
-          const tierRank = { "Free": 0, "Pro": 1, "Enterprise": 2 };
-          const isUpgrade = (tierRank[targetTier] || 0) > (tierRank[currentTier] || 0);
-          const changeType = isUpgrade ? "upgrade" : "downgrade";
-
-          await recordTierChange(
-            user.uid,
-            currentTier,
-            targetTier,
-            changeType
-          );
-
-          // Also update the user's tier in Firestore
-          await updateUserTier(user.uid, targetTier);
-
-          console.log(
-            `✅ Tier change initiated: ${currentTier} → ${targetTier} (${changeType})`
-          );
-        }
-
-        // Redirect to Stripe checkout
-        window.location.href = data.url;
-      } else {
-        alert("Failed to initiate upgrade session.");
-        setUpgradeInProgress(false);
-      }
-    } catch (error) {
-      console.error("❌ Error during upgrade:", error);
-      alert("Failed to process upgrade. Please try again.");
-      setUpgradeInProgress(false);
-    }
-  };
-
-  // ✅ Handle Downgrade functionality
-  const handleDowngrade = async (targetTier) => {
-    if (!user) {
-      alert("User not logged in.");
-      return;
-    }
-
-    // Confirm downgrade action
-    const confirmed = window.confirm(
-      `Are you sure you want to downgrade to ${targetTier} Plan? You may lose access to some premium features.`
-    );
-
-    if (!confirmed) return;
-
-    setDowngradeInProgress(true);
-
-    try {
-      const currentTier = user?.tier || "Free";
-      const tierRank = { "Free": 0, "Pro": 1, "Enterprise": 2 };
-
-      // Verify it's actually a downgrade
-      if ((tierRank[targetTier] || 0) >= (tierRank[currentTier] || 0)) {
-        alert("This is not a downgrade. Please select a lower tier.");
-        setDowngradeInProgress(false);
-        return;
-      }
-
-      // Record the tier downgrade
-      await recordTierChange(
-        user.uid,
-        currentTier,
-        targetTier,
-        "downgrade"
-      );
-
-      // Update user's tier in Firestore
-      await updateUserTier(user.uid, targetTier);
-
-      console.log(`✅ Downgrade recorded: ${currentTier} → ${targetTier}`);
-
-      // Show success message
-      alert(`Successfully downgraded to ${targetTier} Plan`);
-
-      // Note: In a real application, you might also need to handle:
-      // - Canceling any scheduled upgrades
-      // - Updating subscription details with your backend
-      // - Triggering email notification
-      setDowngradeInProgress(false);
-    } catch (error) {
-      console.error("❌ Error during downgrade:", error);
-      alert("Failed to process downgrade. Please try again.");
-      setDowngradeInProgress(false);
-    }
-  };
-
-  // ✅ Handle Cancel Subscription
-  const handleCancelSubscription = async () => {
-    if (!user) {
-      alert("User not logged in.");
-      return;
-    }
-
-    const confirmed = window.confirm(
-      "Are you sure you want to cancel your subscription? You will be downgraded to the Free plan."
-    );
-
-    if (!confirmed) return;
-
-    await handleDowngrade("Free");
-  };
+    return () => unsub();
+  }, [user?.uid]);
 
   if (loading) {
     return (
-      <div className="animate-pulse space-y-4">
-        <div className="h-6 w-3/4 bg-gray-300 dark:bg-gray-700 rounded" />
-        <div className="h-6 w-1/2 bg-gray-300 dark:bg-gray-700 rounded" />
-        <div className="h-6 w-2/3 bg-gray-300 dark:bg-gray-700 rounded" />
+      <div className="animate-pulse space-y-4 p-1">
+        <div className="h-6 w-3/4 bg-slate-200 dark:bg-slate-700 rounded-lg" />
+        <div className="h-24 bg-slate-200 dark:bg-slate-700 rounded-2xl" />
+        <div className="h-14 bg-slate-200 dark:bg-slate-700 rounded-2xl" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border">
-          <h4 className="font-semibold text-gray-900 dark:text-white mb-2">Current Plan</h4>
-          <p className="text-xl text-blue-600 dark:text-blue-400 font-bold">
-            {user?.tier || "Free Plan"} Plan <span className="text-gray-500 dark:text-gray-400">(Active)</span>  
-          </p>
-        </div>
-        <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border">
-          <h4 className="font-semibold text-gray-900 dark:text-white mb-2">Next Payment</h4>
-          <p className="text-lg text-gray-700 dark:text-gray-300">
-            {userDetails?.subscription?.nextPaymentDate || "No payment scheduled"}
-          </p>
-        </div>
-      </div>
+    <div className="space-y-5 relative">
+      {/* Status cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <SectionCard>
+          <div className="p-5">
+            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-3">
+              Current Plan
+            </p>
+            <div className="flex items-center gap-2 mb-2">
+              <TierBadge tier={currentTier} />
+              <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+                Active
+              </span>
+            </div>
 
-      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border shadow-sm">
-        <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Manage Your Subscription
-        </h4>
-
-        {discountActive && (
-          <div className="mb-4 text-green-700 dark:text-green-300 font-medium">
-            🎁 20% discount if you upgrade within 7 days!
+            {expiry ? (
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Expires{" "}
+                <span className="font-semibold text-slate-700 dark:text-slate-300">
+                  {expiry}
+                </span>
+              </p>
+            ) : (
+              <p className="text-xs text-slate-400 dark:text-slate-500">
+                Manual billing — no expiry set
+              </p>
+            )}
           </div>
-        )}
+        </SectionCard>
 
-        <div className="flex flex-col sm:flex-row gap-3">
-          <button
-            onClick={() => handleUpgrade("Pro", userDetails?.subscription?.premiumPriceId || 'price_pro_123')}
-            disabled={upgradeInProgress || user?.tier === "Pro" || user?.tier === "Enterprise"}
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium"
-          >
-            {upgradeInProgress ? "Processing..." : "Upgrade to Pro"}
-          </button>
-          <button
-            onClick={() => handleUpgrade("Enterprise", userDetails?.subscription?.basicPriceId || 'price_ent_123')}
-            disabled={upgradeInProgress || user?.tier === "Enterprise"}
-            className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium"
-          >
-            {upgradeInProgress ? "Processing..." : "Upgrade to Enterprise"}
-          </button>
-          <button 
-            onClick={handleCancelSubscription}
-            disabled={downgradeInProgress || user?.tier === "Free"}
-            className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium"
-          >
-            {downgradeInProgress ? "Processing..." : "Cancel Subscription"}
-          </button>
+        <SectionCard>
+          <div className="p-5">
+            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-3">
+              Latest Request
+            </p>
+
+            {latestRequest ? (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <TierBadge tier={latestRequest.requestedTier === "pro" ? "Pro" : "Enterprise"} />
+                </div>
+                <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                  <StatusDot status={latestRequest.status} />
+                  <span className="capitalize font-medium">
+                    {latestRequest.status?.replace(/_/g, " ")}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-400 dark:text-slate-500">No requests yet.</p>
+            )}
+          </div>
+        </SectionCard>
+      </div>
+
+      {/* Manage subscription (read-only + CTA) */}
+      <SectionCard>
+        <div className="p-5 border-b border-slate-100 dark:border-slate-700">
+          <h4 className="text-base font-semibold text-slate-900 dark:text-white">
+            Manage Subscription
+          </h4>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Upgrade requests are submitted from Billing Info only
+          </p>
         </div>
-      </div>
 
-      <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg border border-yellow-200 dark:border-yellow-800">
-        <h4 className="font-semibold text-yellow-800 dark:text-yellow-200 mb-2">
-          Billing Information
-        </h4>
-        <p className="text-yellow-700 dark:text-yellow-300 text-sm">
-          Your subscription will automatically renew. You can cancel anytime before your next billing date.
+        <div className="p-5 space-y-4">
+          <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+            To upgrade, open <span className="font-semibold text-slate-900 dark:text-white">Billing Info</span>, make your transfer, then submit your request from there.
+          </p>
+
+          <button
+            type="button"
+            onClick={() => onGoToBilling?.()}
+            className="w-full px-5 py-3 rounded-xl text-sm font-semibold transition-all duration-200 bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
+          >
+            Go to Billing Info
+          </button>
+
+          {latestRequest?.status === "pending" && (
+            <div className="flex gap-3 p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+              <span className="text-amber-500 text-base mt-0.5">⏳</span>
+              <p className="text-sm text-amber-800 dark:text-amber-200">
+                Your request is pending. Once payment is confirmed, your tier will be activated.
+              </p>
+            </div>
+          )}
+        </div>
+      </SectionCard>
+
+      {/* Admin note (optional, keep if useful internally) */}
+      {/* <div className="rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 p-4">
+        <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">
+          Admin Activation
         </p>
-      </div>
+        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+          After payment is confirmed, update{" "}
+          <code className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono">
+            users/&lt;uid&gt;.tier
+          </code>{" "}
+          to <strong>pro</strong> or <strong>enterprise</strong>.
+        </p>
+      </div> */}
     </div>
   );
 };

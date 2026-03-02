@@ -79,6 +79,10 @@ const UptimeChart = forwardRef(({ onRendered }, ref) => {
   const [fetchError, setFetchError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  // Live current-session ticker — reads sessionLastLogin written by SessionTracker
+  const [currentSessionSeconds, setCurrentSessionSeconds] = useState(0);
+  const currentSessionIdRef = useRef(sessionStorage.getItem('currentSessionId'));
+
   const db = getFirestore();
   const auth = getAuth();
 
@@ -87,6 +91,25 @@ const UptimeChart = forwardRef(({ onRendered }, ref) => {
   useEffect(() => {
     onRenderedRef.current = onRendered;
   }, [onRendered]);
+
+  // ── Live current-session ticker ───────────────────────────────────────────
+  // SessionTracker writes 'sessionLastLogin' to sessionStorage when a session
+  // starts. We tick every second so totals include the ongoing session in real
+  // time. If the key is absent (session not yet written) we show 0.
+  useEffect(() => {
+    const tick = () => {
+      const stored = sessionStorage.getItem('sessionLastLogin');
+      if (!stored) { setCurrentSessionSeconds(0); return; }
+      const elapsed = Math.floor((Date.now() - new Date(stored).getTime()) / 1000);
+      setCurrentSessionSeconds(elapsed > 0 ? elapsed : 0);
+      // Keep currentSessionIdRef in sync in case SessionTracker set it after mount
+      currentSessionIdRef.current = sessionStorage.getItem('currentSessionId');
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, []);
+  // ─────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (isOpen) {
@@ -182,9 +205,15 @@ const UptimeChart = forwardRef(({ onRendered }, ref) => {
         ? new Date(new Date(endDate).setHours(23, 59, 59, 999))
         : null;
 
-      // ✅ Filter sessions by start time & positive duration
+      // The current live session doc exists in Firestore with duration=0 (or a
+      // heartbeat value). We always represent it via the live ticker instead of
+      // its saved duration, so we exclude it from the historical list entirely.
+      const currentId = currentSessionIdRef.current;
+
+      // ✅ Filter sessions by start time & positive duration, excluding current session
       const filtered = sessions.filter((s) => {
         if (!s.start) return false;
+        if (s.id === currentId) return false; // handled by live ticker below
 
         const startTime = s.start.toDate ? s.start.toDate() : new Date(s.start.seconds * 1000);
         if (startFilterDate && startTime < startFilterDate) return false;
@@ -198,11 +227,17 @@ const UptimeChart = forwardRef(({ onRendered }, ref) => {
         const duration = s.duration || 0;
         totalSeconds += duration;
 
-        // ✅ FIXED: Only count sessions that started today
         if (startTime >= todayStart && startTime <= now) {
           todaySeconds += duration;
         }
       });
+
+      // ── Add live current session seconds ──────────────────────────────────
+      // currentSessionSeconds ticks every second from sessionStorage('sessionLastLogin'),
+      // the same key used by KpiCard, GenerateUserNotification, and ActivityLog.
+      totalSeconds += currentSessionSeconds;
+      todaySeconds += currentSessionSeconds;
+      // ─────────────────────────────────────────────────────────────────────
 
       setFilteredSessions(filtered);
       setTotalNetworkTime({
@@ -216,7 +251,7 @@ const UptimeChart = forwardRef(({ onRendered }, ref) => {
     };
 
     calculateTimes();
-  }, [sessions, startDate, endDate]);
+  }, [sessions, startDate, endDate, currentSessionSeconds]);
 
   // --- Loading animation for expand toggle (3 seconds) ---
   useEffect(() => {
@@ -230,12 +265,21 @@ const UptimeChart = forwardRef(({ onRendered }, ref) => {
   // --- Generate chart data with numerical date labels sorted chronologically ---
   const getChartData = () => {
     if (view === 'session') {
+      // Append a synthetic live-session entry so the chart shows the ongoing session
+      const liveHours = currentSessionSeconds / 3600;
+      const sessionLabels = [...filteredSessions.map((_, idx) => String(idx + 1))];
+      const sessionData = [...filteredSessions.map((s) => (s.duration || 0) / 3600)];
+      if (currentSessionSeconds > 0) {
+        sessionLabels.push('Live');
+        sessionData.push(liveHours);
+      }
+
       return {
-        labels: filteredSessions.map((_, idx) => String(idx + 1)),
+        labels: sessionLabels,
         datasets: [
           {
             label: 'Session Duration (hrs)',
-            data: filteredSessions.map((s) => (s.duration || 0) / 3600),
+            data: sessionData,
             backgroundColor: chartType === 'bar' 
               ? 'rgba(16, 185, 129, 0.8)'
               : 'transparent',
@@ -259,6 +303,12 @@ const UptimeChart = forwardRef(({ onRendered }, ref) => {
         const dayKey = date.toISOString().split('T')[0];
         dailyAggregates[dayKey] = (dailyAggregates[dayKey] || 0) + (s.duration || 0);
       });
+
+      // Add live session seconds into today's bucket
+      if (currentSessionSeconds > 0) {
+        const todayKey = new Date().toISOString().split('T')[0];
+        dailyAggregates[todayKey] = (dailyAggregates[todayKey] || 0) + currentSessionSeconds;
+      }
 
       const sortedDates = Object.keys(dailyAggregates).sort((a, b) => new Date(a) - new Date(b));
       const data = sortedDates.map((date) => dailyAggregates[date] / 3600);
@@ -287,17 +337,26 @@ const UptimeChart = forwardRef(({ onRendered }, ref) => {
     }
   };
 
-  // Calculate device breakdown
+  // Calculate device breakdown — includes historical sessions + current live session
   const deviceBreakdown = {};
+
   filteredSessions.forEach((s) => {
     let deviceType = s.deviceType || 'Desktop';
-    
-    if (deviceType === 'Unknown' || !deviceType) {
-      deviceType = 'Desktop';
-    }
-    
+    if (deviceType === 'Unknown' || !deviceType) deviceType = 'Desktop';
     deviceBreakdown[deviceType] = (deviceBreakdown[deviceType] || 0) + (s.duration || 0);
   });
+
+  // Add the live session's device and seconds into the breakdown
+  if (currentSessionSeconds > 0) {
+    const liveDevice = (() => {
+      const ua = navigator.userAgent.toLowerCase();
+      if (/android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(ua)) {
+        return /ipad|android(?!.*mobile)|tablet/i.test(ua) ? 'Tablet' : 'Mobile';
+      }
+      return 'Desktop';
+    })();
+    deviceBreakdown[liveDevice] = (deviceBreakdown[liveDevice] || 0) + currentSessionSeconds;
+  }
 
   const formattedDeviceBreakdown = Object.entries(deviceBreakdown).map(([type, seconds]) => {
     const hours = Math.floor(seconds / 3600);
@@ -478,7 +537,7 @@ const UptimeChart = forwardRef(({ onRendered }, ref) => {
                   Try Again
                 </button>
               </div>
-            ) : filteredSessions.length === 0 ? (
+            ) : filteredSessions.length === 0 && currentSessionSeconds === 0 ? (
               <div className="bg-gray-50 dark:bg-gray-800/50 border-2 border-gray-200 dark:border-gray-700 rounded-xl p-12 text-center">
                 <p className="text-lg text-gray-600 dark:text-gray-400">📊 No sessions found for the selected range.</p>
                 <p className="text-sm text-gray-500 dark:text-gray-500 mt-2">Try adjusting your date range or check back later.</p>

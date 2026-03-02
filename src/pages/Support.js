@@ -1,11 +1,17 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
+import { useLocation } from 'react-router-dom';
 import { ChevronRight, ChevronUp } from 'react-feather';
 
 // Lazy loading the contact form component
 const ContactForm = lazy(() => import('../components/ContactForm'));
 
 const SupportPage = () => {
-  const [activeTab, setActiveTab] = useState('FAQs');
+  const location = useLocation();
+  const [activeTab, setActiveTab] = useState(() => {
+    const params = new URLSearchParams(location.search);
+    const tab = params.get('tab');
+    return tab === 'Contact' ? 'Contact' : 'FAQs';
+  });
   const [openFaqIndex, setOpenFaqIndex] = useState({ categoryIdx: null, faqIdx: null });
   const [loading, setLoading] = useState(true);
     

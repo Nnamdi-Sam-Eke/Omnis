@@ -1,115 +1,32 @@
 import { useEffect, useState, useRef } from "react";
-import {
-  collection,
-  query,
-  orderBy,
-  doc,
-  updateDoc,
-  deleteDoc,
-  limit,
-  startAfter,
-  getDocs,
-  writeBatch,
-  where,
-  getDoc
-} from "firebase/firestore";
 import { useAuth } from "../AuthContext";
-import { db } from "../firebase";
 import moment from "moment";
 import toast, { Toaster } from "react-hot-toast";
-import { generateUserNotifications } from "../components/GenerateUserNotification";
+import { useNotifications } from "../context/NotificationsContext";
 import { Bell, Info, CheckCircle, Inbox, Filter, Trash2, Search, X, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 
 export default function NotificationsPage() {
-  const [notifications, setNotifications] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [lastVisible, setLastVisible] = useState(null);
-  const [hasMore, setHasMore] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const { user } = useAuth();
+  const {
+    notifications,
+    loading,
+    hasMore,
+    loadingMore,
+    loadMore,
+    markAsRead,
+    markAllAsRead,
+    clearAllUnread,
+    deleteNotification,
+  } = useNotifications();
+
   const [filterType, setFilterType] = useState("all");
   const [readFilter, setReadFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [showFilters, setShowFilters] = useState(false);
-  const { user } = useAuth();
   const topRef = useRef();
 
-  useEffect(() => {
-    if (!user?.uid) return;
 
-    const fetchData = async () => {
-      try {
-        const q = query(
-          collection(db, "notifications"),
-          where("userId", "==", user.uid),
-          orderBy("timestamp", "desc"),
-          limit(10)
-        );
-
-        const [snapshot, userDoc, sessionSnap] = await Promise.all([
-          getDocs(q),
-          getDoc(doc(db, "users", user.uid)),
-          getDocs(query(collection(db, "sessions"), where("userId", "==", user.uid)))
-        ]);
-
-        const firestoreNotifications = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-          timestamp: doc.data().timestamp?.toDate?.() || new Date()
-        }));
-
-        const userData = userDoc.exists() ? userDoc.data() : null;
-        const sessionDocs = sessionSnap.docs;
-
-        const syntheticNotifications = generateUserNotifications(userData, sessionDocs).map(notif => ({
-          ...notif,
-          // Don't mark tier change notifications as read - they're important!
-          read: notif.isTierChange ? false : true
-        }));
-        const combined = [...firestoreNotifications, ...syntheticNotifications];        
-        // Robust dedupe: detect tier-change notifications by from/to and prefer persisted (firestore) records
-        const dedupMap = new Map();
-        const getTierKey = (n) => {
-          if (!n) return null;
-          if (n.isTierChange) {
-            // Try structured details first
-            const from = n.tierChangeDetails?.from || (n.message && (n.message.match(/from\s+([^\s]+)\s+to\s+(.+)/i) || [])[1]) || n.from || '';
-            const to = n.tierChangeDetails?.to || (n.message && (n.message.match(/from\s+([^\s]+)\s+to\s+(.+)/i) || [])[2]) || n.to || '';
-            return `tierChange_${String(from).toLowerCase()}_${String(to).toLowerCase()}`;
-          }
-          const time = n.timestamp?.toDate ? n.timestamp.toDate().getTime() : (n.timestamp instanceof Date ? n.timestamp.getTime() : new Date(n.timestamp).getTime());
-          return `${(n.activityType || n.title || 'unknown')}_${time}`;
-        };
-        combined.forEach((n) => {
-          const key = getTierKey(n);
-          if (!key) return;
-          if (!dedupMap.has(key)) {
-            dedupMap.set(key, n);
-            return;
-          }
-          // If duplicate exists, prefer the persisted firestore notification (source !== 'synthetic')
-          const existing = dedupMap.get(key);
-          const existingIsSynthetic = existing.source === 'synthetic' || existing.source == null && existing.id && existing.id === (existing.id || '').toString().startsWith('plan');
-          const incomingIsSynthetic = n.source === 'synthetic' || n.source == null && n.id && n.id === (n.id || '').toString().startsWith('plan');
-          if (existingIsSynthetic && !incomingIsSynthetic) {
-            dedupMap.set(key, n);
-          }
-        });
-        const deduped = Array.from(dedupMap.values());
-        setNotifications(deduped.sort((a, b) => b.timestamp - a.timestamp));
-
-        setNotifications(deduped.sort((a, b) => b.timestamp - a.timestamp));
-        setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
-        setHasMore(snapshot.docs.length === 10);
-        setLoading(false);
-      } catch (error) {
-        console.error("Failed to fetch notifications or user data:", error);
-        toast.error("Failed to load notifications.");
-      }
-    };
-
-    fetchData();
-  }, [user?.uid]);
 
   useEffect(() => {
     if (topRef.current) {
@@ -117,44 +34,13 @@ export default function NotificationsPage() {
     }
   }, [notifications]);
 
+  // Clear all unread on mount — delegates to context which owns the Firestore write
   useEffect(() => {
-    if (notifications.length === 0) return;
+    if (!user?.uid) return;
+    clearAllUnread();
+  }, [user?.uid]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const timeout = setTimeout(() => {
-      markAllAsRead();
-    }, 5000); // ⏱ Auto-mark as read after 5s
 
-    return () => clearTimeout(timeout);
-  }, [notifications]);
-
-  const loadMoreNotifications = async () => {
-    if (!lastVisible || !user?.uid) return;
-    setLoadingMore(true);
-    try {
-      const nextQuery = query(
-        collection(db, "notifications"),
-        where("userId", "==", user.uid),
-        orderBy("timestamp", "desc"),
-        startAfter(lastVisible),
-        limit(10)
-      );
-      const snapshot = await getDocs(nextQuery);
-      const newNotifications = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-        timestamp: doc.data().timestamp?.toDate?.() || new Date()
-      }));
-
-      setNotifications((prev) => [...prev, ...newNotifications]);
-      setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
-      setHasMore(snapshot.docs.length === 10);
-    } catch (error) {
-      console.error(error);
-      toast.error("Error loading more notifications");
-    } finally {
-      setLoadingMore(false);
-    }
-  };
 
   const getIcon = (type) => {
     const iconProps = "w-5 h-5";
@@ -177,43 +63,7 @@ export default function NotificationsPage() {
     }
   };
 
-  const markAsRead = (id) => {
-    setNotifications(prev => 
-      prev.map(notif => 
-        notif.id === id ? { ...notif, read: true } : notif
-      )
-    );
-  };
 
-  const markAllAsRead = async () => {
-    try {
-      const unreadNotifications = notifications.filter(
-        (notif) => !notif.read && notif.source !== "synthetic"
-      );
-      
-      if (unreadNotifications.length > 0) {
-        const batch = writeBatch(db);
-        unreadNotifications.forEach((notif) => {
-          const notificationRef = doc(db, "notifications", notif.id);
-          batch.update(notificationRef, { read: true });
-        });
-        await batch.commit();
-        toast.success("All notifications marked as read.");
-      }
-      
-      // Update all notifications in local state
-      setNotifications((prev) =>
-        prev.map((notif) => ({ ...notif, read: true }))
-      );
-    } catch (error) {
-      console.error("Error marking all as read:", error.message);
-      toast.error("Error marking all as read.");
-    }
-  };
-
-  const deleteNotification = (id) => {
-    setNotifications(prev => prev.filter(notif => notif.id !== id));
-  };
 
   const filtered = notifications
     .filter((n) => filterType === "all" || n.type === filterType)
@@ -488,7 +338,7 @@ export default function NotificationsPage() {
         {hasMore && (
           <div className="flex justify-center mt-12">
             <button
-              onClick={loadMoreNotifications}
+              onClick={loadMore}
               disabled={loadingMore}
               className="px-8 py-4 bg-white/70 dark:bg-gray-900/70 backdrop-blur-xl border border-gray-200/50 dark:border-gray-700/50 rounded-2xl hover:bg-gray-50/70 dark:hover:bg-gray-800/70 transition-all duration-200 font-semibold text-gray-700 dark:text-gray-300 disabled:opacity-50 shadow-lg shadow-gray-500/5 hover:shadow-gray-500/10 hover:-translate-y-1 transform active:scale-95"
             >

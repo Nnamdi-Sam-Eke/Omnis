@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 
 // Lightweight cross-tab idle timer using BroadcastChannel with localStorage fallback.
 export default function useIdleTimer({
-  timeoutMinutes = 7,
-  warningMinutes = 5,
+  timeoutMinutes = 12,
+  warningMinutes = 10,
   onWarn = () => {},
   onTimeout = () => {},
   onActive = () => {},

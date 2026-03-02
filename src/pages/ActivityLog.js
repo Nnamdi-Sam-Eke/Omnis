@@ -1,9 +1,10 @@
-import React, { useEffect, useState, lazy, Suspense, useRef } from "react";
-import { doc, getDoc, collection, getDocs, query, where} from "firebase/firestore";
+import React, { useEffect, useState, lazy, Suspense } from "react";
+import { doc, getDoc, collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../AuthContext";
-import { Activity, Shield, Clock, Users, Download, ChevronRight, Calendar, Zap } from "lucide-react";
+import { Activity, Shield, Clock, Users, Download, ChevronRight, Calendar, Zap, Filter, ChevronDown, ChevronUp } from "lucide-react";
 import { generateUserNotifications, processFirestoreNotifications } from "../components/GenerateUserNotification";
+import { useNotifications } from "../context/NotificationsContext";
 
 
 
@@ -108,14 +109,16 @@ function getStartOfToday() {
 
 const ActivityLogPage = () => {
   const { user } = useAuth();
+  const { notifications: contextNotifications } = useNotifications();
   const [logs, setLogs] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showSessionsModal, setShowSessionsModal] = useState(false);
   const [activeSessions, setActiveSessions] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
-
-  const hasFetchedRef = useRef(false);
+  const [activeFilter, setActiveFilter] = useState("All");
+  const [collapsedDays, setCollapsedDays] = useState({});
+  const [visibleCount, setVisibleCount] = useState(6);
 
   // Initial loading timer
   useEffect(() => {
@@ -123,14 +126,13 @@ const ActivityLogPage = () => {
     return () => clearTimeout(timer);
   }, []);
 
-  // Main effect to trigger data fetching when user is available
+  // Derive logs from context notifications whenever they update.
+  // No Firestore reads here — NotificationsContext owns all the data.
   useEffect(() => {
-    if (user?.uid && !hasFetchedRef.current) {
-      hasFetchedRef.current = true;
-      fetchActivityData();
-      fetchActiveSessions();
-    }
-  }, [user?.uid]);
+    if (!user?.uid) return;
+    fetchActiveSessions();
+    buildLogsFromContext();
+  }, [user?.uid, contextNotifications]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Function to fetch active sessions from Firebase (only today's sessions)
   const fetchActiveSessions = async () => {
@@ -163,116 +165,25 @@ const ActivityLogPage = () => {
     }
   };
 
-  // Main function to fetch activity data and create activity logs
-  const fetchActivityData = async () => {
-    if (!user?.uid) return;
-    
+  // Build activity logs directly from context notifications — zero extra Firestore reads.
+  const buildLogsFromContext = () => {
+    if (!contextNotifications?.length) return;
     setIsLoading(true);
-    try {
-      // 1. Fetch user document
-      const userRef = doc(db, "users", user.uid);
-      const userDoc = await getDoc(userRef);
-      
-      // 2. Fetch user sessions subcollection
-      const sessionsRef = collection(db, "users", user.uid, "sessions");
-      const sessionsSnapshot = await getDocs(sessionsRef);
-      const sessionDocs = sessionsSnapshot.docs;
-
-      // 3. ✅ FETCH TIER CHANGE NOTIFICATIONS FROM FIRESTORE (persistent notifications)
-      const tierChangeNotifs = await getDocs(
-        query(
-          collection(db, "notifications"),
-          where("userId", "==", user.uid),
-          where("isTierChange", "==", true)
-        )
-      );
-      const tierChangeNotifications = tierChangeNotifs.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
-        
-        // Check for tier changes locally and store last known tier
-        let immediateTierChange = null;
-        if (userData.tier) {
-          const currentTier = userData.tier;
-          const previousTier = localStorage.getItem("lastKnownTier");
-
-          if (previousTier && previousTier !== currentTier) {
-            // Prepare an immediate synthetic tier-change entry for Activity Log display
-            immediateTierChange = {
-              from: previousTier,
-              to: currentTier
-            };
-          }
-
-          localStorage.setItem("lastKnownTier", currentTier);
-        }
-
-        // Generate notifications using the shared function
-        const notifications = generateUserNotifications(userData, sessionDocs);
-
-        // ✅ ADD: Process and include Firestore tier change notifications
-        const processedTierChanges = processFirestoreNotifications(tierChangeNotifications);
-        notifications.push(...processedTierChanges);
-
-        // If we detected a recent tier change locally, prepend a synthetic activity so it appears immediately
-        // But only if the user document does NOT already contain a persisted planUpgraded/planDowngraded field
-        if (immediateTierChange && !userData.planUpgraded && !userData.planDowngraded) {
-          const now = new Date();
-          const isUpgrade = (function(from, to) {
-            const rank = { Free: 0, Pro: 1, Enterprise: 2 };
-            return (rank[to] || 0) > (rank[from] || 0);
-          })(immediateTierChange.from, immediateTierChange.to);
-
-          notifications.unshift({
-            id: `tier_change_local_${now.getTime()}`,
-            activityType: isUpgrade ? 'Plan Upgraded' : 'Plan Downgraded',
-            title: isUpgrade ? 'Plan Upgraded' : 'Plan Downgraded',
-            message: isUpgrade ? `You upgraded your plan from ${immediateTierChange.from} to ${immediateTierChange.to}` : `You downgraded your plan from ${immediateTierChange.from} to ${immediateTierChange.to}`,
-            type: isUpgrade ? 'success' : 'alert',
-            timestamp: now,
-            source: 'synthetic',
-            isPersistent: true,
-            isTierChange: true,
-            tierChangeTime: now.toISOString()
-          });
-        }
-        
-        // ✅ IMPROVED: Deduplicate notifications (especially tier changes)
-        const deduplicatedNotifications = Array.from(
-          new Map(
-            notifications.map((n) => {
-              // For tier changes, use a composite key to avoid duplicates
-              if (n.isTierChange) {
-                const tierKey = `tierchange_${n.tierChangeDetails?.from || n.message.split('from ')[1]?.split(' ')[0] || ''}_${n.tierChangeDetails?.to || n.message.split('to ')[1]?.split(' ')[0] || ''}`;
-                return [tierKey, n];
-              }
-              return [n.id, n];
-            })
-          ).values()
-        );
-        
-        // Convert notifications to activity log format
-        const activityLogs = deduplicatedNotifications.map(notif => ({
-          id: notif.id,
-          activityType: notif.activityType || notif.title,
-          description: notif.message,
-          timestamp: notif.timestamp instanceof Date ? notif.timestamp : 
-                     (notif.timestamp?.toDate ? notif.timestamp.toDate() : new Date()),
-          type: notif.type,
-          isPersistent: notif.isPersistent
-        }));
-
-        // Sort logs by timestamp (most recent first)
-        const sortedLogs = activityLogs.sort((a, b) => b.timestamp - a.timestamp);
-        setLogs(sortedLogs);
-      }
-    } catch (error) {
-      console.error("Error fetching activity data:", error);
-    }
+    const activityLogs = contextNotifications.map((notif) => ({
+      id: notif.id,
+      activityType: notif.activityType || notif.title,
+      description: notif.message,
+      timestamp:
+        notif.timestamp instanceof Date
+          ? notif.timestamp
+          : notif.timestamp?.toDate
+          ? notif.timestamp.toDate()
+          : new Date(),
+      type: notif.type,
+      isPersistent: notif.isPersistent,
+    }));
+    const sorted = activityLogs.sort((a, b) => b.timestamp - a.timestamp);
+    setLogs(sorted);
     setIsLoading(false);
   };
 
@@ -347,39 +258,165 @@ const ActivityLogPage = () => {
 
         {/* Activity Log */}
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-          <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Recent Activity</h2>
-          </div>
           
+          {/* Header + Filter Tabs */}
+          <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Recent Activity</h2>
+                <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">
+                  ({logs.filter(l => activeFilter === "All" || getActivityCategory(l.activityType) === activeFilter).length} events)
+                </span>
+              </div>
+              {/* Category Filter Tabs */}
+              <div className="flex items-center gap-1 flex-wrap">
+                <Filter className="w-3.5 h-3.5 text-gray-400 mr-1 flex-shrink-0" />
+                {["All", "Billing", "Security", "Account", "Activity"].map(cat => (
+                  <button
+                    key={cat}
+                    onClick={() => { setActiveFilter(cat); setVisibleCount(6); }}
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 ${
+                      activeFilter === cat
+                        ? "bg-blue-600 text-white shadow-sm"
+                        : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
           <div className="p-6">
             {isLoading ? (
               <div className="flex items-center justify-center py-12">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                 <span className="ml-3 text-blue-600 dark:text-blue-400">Loading activity...</span>
               </div>
-            ) : (
-              <div className="space-y-4">
-                <Suspense fallback={
-                  <div className="space-y-4">
-                    {[...Array(3)].map((_, i) => (
-                      <div key={i} className="h-20 bg-gray-100 dark:bg-gray-700 rounded-xl animate-pulse"></div>
-                    ))}
+            ) : (() => {
+              // Apply category filter
+              const filtered = logs.filter(l =>
+                activeFilter === "All" || getActivityCategory(l.activityType) === activeFilter
+              );
+
+              if (filtered.length === 0) {
+                return (
+                  <div className="text-center py-12">
+                    <Activity className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-gray-500 dark:text-gray-400 text-lg">No activity logs found</p>
+                    <p className="text-gray-400 dark:text-gray-500 text-sm mt-2">
+                      {activeFilter === "All"
+                        ? "Your activities will appear here as you use the platform"
+                        : `No ${activeFilter} events recorded yet`}
+                    </p>
                   </div>
-                }>
-                  {logs.length > 0 ? (
-                    logs.map(log => (
-                      <ActivityLogRow key={log.id} log={log} />
-                    ))
-                  ) : (
-                    <div className="text-center py-12">
-                      <Activity className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                      <p className="text-gray-500 dark:text-gray-400 text-lg">No activity logs found</p>
-                      <p className="text-gray-400 dark:text-gray-500 text-sm mt-2">Your activities will appear here as you use the platform</p>
+                );
+              }
+
+              // Group filtered logs by date label
+              const groups = filtered.reduce((acc, log) => {
+                const today = new Date();
+                const yesterday = new Date(today);
+                yesterday.setDate(today.getDate() - 1);
+                const d = log.timestamp;
+                let label;
+                if (d.toDateString() === today.toDateString()) label = "Today";
+                else if (d.toDateString() === yesterday.toDateString()) label = "Yesterday";
+                else label = d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+                if (!acc[label]) acc[label] = [];
+                acc[label].push(log);
+                return acc;
+              }, {});
+
+              // Flatten groups respecting visibleCount and per-day collapse
+              let rendered = 0;
+              const sections = [];
+
+              for (const [label, dayLogs] of Object.entries(groups)) {
+                if (rendered >= visibleCount) break;
+                const isCollapsed = collapsedDays[label];
+                const remaining = visibleCount - rendered;
+                const visibleLogs = isCollapsed ? [] : dayLogs.slice(0, remaining);
+                rendered += visibleLogs.length;
+
+                sections.push(
+                  <div key={label} className="mb-6 last:mb-0">
+                    {/* Date group header */}
+                    <button
+                      onClick={() => setCollapsedDays(prev => ({ ...prev, [label]: !prev[label] }))}
+                      className="w-full flex items-center gap-3 mb-3 group"
+                    >
+                      <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap">
+                        {label}
+                      </span>
+                      <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
+                      <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">{dayLogs.length}</span>
+                      {isCollapsed
+                        ? <ChevronDown className="w-3.5 h-3.5 text-gray-400 group-hover:text-blue-500 transition-colors" />
+                        : <ChevronUp className="w-3.5 h-3.5 text-gray-400 group-hover:text-blue-500 transition-colors" />
+                      }
+                    </button>
+
+                    {/* Day entries */}
+                    {!isCollapsed && (
+                      <Suspense fallback={
+                        <div className="space-y-3">
+                          {[...Array(3)].map((_, i) => (
+                            <div key={i} className="h-20 bg-gray-100 dark:bg-gray-700 rounded-xl animate-pulse" />
+                          ))}
+                        </div>
+                      }>
+                        <div className="space-y-3">
+                          {visibleLogs.map(log => (
+                            <ActivityLogRow key={log.id} log={log} />
+                          ))}
+                          {/* Per-day overflow hint */}
+                          {isCollapsed === false && dayLogs.length > remaining && (
+                            <p className="text-xs text-gray-400 dark:text-gray-500 text-center pt-1">
+                              + {dayLogs.length - remaining} more — load more below
+                            </p>
+                          )}
+                        </div>
+                      </Suspense>
+                    )}
+                  </div>
+                );
+              }
+
+              const totalVisible = filtered.slice(0, visibleCount).length;
+              const hasMore = filtered.length > visibleCount;
+
+              return (
+                <>
+                  {sections}
+                  {/* Load More / Show Less controls */}
+                  <div className="flex items-center justify-between mt-6 pt-4 border-t border-gray-100 dark:border-gray-700">
+                    <span className="text-xs text-gray-400 dark:text-gray-500">
+                      Showing {Math.min(visibleCount, filtered.length)} of {filtered.length} events
+                    </span>
+                    <div className="flex gap-2">
+                      {visibleCount > 6 && (
+                        <button
+                          onClick={() => setVisibleCount(6)}
+                          className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-all duration-200"
+                        >
+                          Show less
+                        </button>
+                      )}
+                      {hasMore && (
+                        <button
+                          onClick={() => setVisibleCount(v => v + 6)}
+                          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all duration-200 shadow-sm"
+                        >
+                          Load more ({filtered.length - visibleCount} remaining)
+                        </button>
+                      )}
                     </div>
-                  )}
-                </Suspense>
-              </div>
-            )}
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
 

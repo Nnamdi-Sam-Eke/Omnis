@@ -5,7 +5,6 @@ import {
   query,
   orderBy,
   getDocs,
-  where,
   startAfter,
   limit,
 } from "firebase/firestore";
@@ -13,7 +12,148 @@ import { useAuth } from "../AuthContext";
 import { debounce } from "lodash";
 import { Tag, Search, Clock, MessageSquare, Filter, AlertCircle, ChevronDown } from "lucide-react";
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 6;
+
+// ── Renders a single line of markdown-style text ─────────────────────────
+// Handles **bold**, *italic*, and plain text inline.
+const InlineText = ({ text }) => {
+  const parts = text.split(/(\*\*.*?\*\*|\*.*?\*)/g);
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (part.startsWith('**') && part.endsWith('**'))
+          return <strong key={i} className="font-semibold text-slate-800 dark:text-slate-200">{part.slice(2, -2)}</strong>;
+        if (part.startsWith('*') && part.endsWith('*'))
+          return <em key={i}>{part.slice(1, -1)}</em>;
+        return <span key={i}>{part}</span>;
+      })}
+    </>
+  );
+};
+
+// ── Renders a structured object as labelled sections ─────────────────────
+const ObjectResponse = ({ obj }) => (
+  <div className="space-y-3">
+    {Object.entries(obj).map(([key, value]) => (
+      <div key={key}>
+        <p className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1">
+          {key.replace(/_/g, ' ')}
+        </p>
+        {typeof value === 'string'
+          ? <FormattedResponse response={value} />
+          : Array.isArray(value)
+            ? <ul className="space-y-1 pl-4 border-l-2 border-blue-200 dark:border-blue-700">
+                {value.map((item, i) => (
+                  <li key={i} className="text-sm text-slate-700 dark:text-slate-300">
+                    {typeof item === 'object' ? <ObjectResponse obj={item} /> : String(item)}
+                  </li>
+                ))}
+              </ul>
+            : typeof value === 'object' && value !== null
+              ? <ObjectResponse obj={value} />
+              : <p className="text-sm text-slate-700 dark:text-slate-300">{String(value)}</p>
+        }
+      </div>
+    ))}
+  </div>
+);
+
+// ── Main formatter — handles strings, objects, arrays ────────────────────
+const FormattedResponse = ({ response }) => {
+  // ── Object ──
+  if (typeof response === 'object' && response !== null && !Array.isArray(response)) {
+    return <ObjectResponse obj={response} />;
+  }
+
+  // ── Array ──
+  if (Array.isArray(response)) {
+    return (
+      <ul className="space-y-1 pl-4 border-l-2 border-blue-200 dark:border-blue-700">
+        {response.map((item, i) => (
+          <li key={i} className="text-sm text-slate-700 dark:text-slate-300">
+            {typeof item === 'object' ? <ObjectResponse obj={item} /> : String(item)}
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  // ── String — parse markdown-style formatting ──
+  const text = typeof response === 'string' ? response : String(response);
+  const lines = text.split('\n');
+  const elements = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i].trim();
+
+    if (!line) { i++; continue; }
+
+    // Heading: ## or ###
+    if (line.startsWith('### ')) {
+      elements.push(
+        <h4 key={i} className="text-sm font-bold text-slate-800 dark:text-slate-100 mt-3 mb-1">
+          <InlineText text={line.slice(4)} />
+        </h4>
+      );
+    } else if (line.startsWith('## ')) {
+      elements.push(
+        <h3 key={i} className="text-base font-bold text-slate-800 dark:text-slate-100 mt-3 mb-1">
+          <InlineText text={line.slice(3)} />
+        </h3>
+      );
+    // Bullet: - or * or \n-
+    } else if (/^[-*•]\s+/.test(line)) {
+      // Collect consecutive bullet lines into a list
+      const items = [];
+      while (i < lines.length && /^[-*•]\s+/.test(lines[i].trim())) {
+        items.push(lines[i].trim().replace(/^[-*•]\s+/, ''));
+        i++;
+      }
+      elements.push(
+        <ul key={`ul-${i}`} className="space-y-1 pl-4 list-none">
+          {items.map((item, idx) => (
+            <li key={idx} className="flex gap-2 text-sm text-slate-700 dark:text-slate-300">
+              <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-blue-400 dark:bg-blue-500 flex-shrink-0" />
+              <InlineText text={item} />
+            </li>
+          ))}
+        </ul>
+      );
+      continue;
+    // Numbered list: 1. 2. etc
+    } else if (/^\d+\.\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\d+\.\s+/.test(lines[i].trim())) {
+        items.push(lines[i].trim().replace(/^\d+\.\s+/, ''));
+        i++;
+      }
+      elements.push(
+        <ol key={`ol-${i}`} className="space-y-1 pl-4 list-decimal list-outside">
+          {items.map((item, idx) => (
+            <li key={idx} className="text-sm text-slate-700 dark:text-slate-300 pl-1">
+              <InlineText text={item} />
+            </li>
+          ))}
+        </ol>
+      );
+      continue;
+    // Regular paragraph
+    } else {
+      elements.push(
+        <p key={i} className="text-sm text-slate-700 dark:text-slate-300">
+          <InlineText text={line} />
+        </p>
+      );
+    }
+
+    i++;
+  }
+
+  return <div className="space-y-1.5">{elements}</div>;
+};
+
+// ─────────────────────────────────────────────────────────────────────────
 
 const History = () => {
   const { user } = useAuth();
@@ -27,19 +167,11 @@ const History = () => {
   const [lastVisible, setLastVisible] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [expandedItems, setExpandedItems] = useState(new Set()); // Track expanded items
+  const [visibleCount, setVisibleCount] = useState(6);
+  const [expandedItem, setExpandedItem] = useState(null); // Only one open at a time
 
-  // Toggle collapse/expand for individual items
   const toggleExpand = (itemId) => {
-    setExpandedItems(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(itemId)) {
-        newSet.delete(itemId);
-      } else {
-        newSet.add(itemId);
-      }
-      return newSet;
-    });
+    setExpandedItem(prev => prev === itemId ? null : itemId);
   };
 
   // Get category color based on category name
@@ -51,8 +183,8 @@ const History = () => {
       'Finance': 'from-amber-500 to-orange-600',
       'Education': 'from-indigo-500 to-blue-600',
       'Creative': 'from-pink-500 to-rose-600',
-      'Personal': 'from-green-500 to-emerald-600',
-      'default': 'from-slate-500 to-slate-700'
+      'Personal': 'from-slate-500 to-slate-600',
+      'default': 'from-green-500 to-emerald-600'
     };
     
     return colors[category] || colors.default;
@@ -241,6 +373,9 @@ const History = () => {
     return Array.from(suggestionSet).slice(0, 5);
   }, [debouncedSearch, activeHistory]);
 
+  // Reset visible count when search or category filter changes
+  useEffect(() => { setVisibleCount(6); }, [debouncedSearch, selectedCategory]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 flex items-center justify-center">
@@ -332,8 +467,8 @@ const History = () => {
         <div className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
           {filteredInteractions.length > 0 ? (
             <div className="divide-y divide-slate-200 dark:divide-slate-700">
-              {filteredInteractions.map((interaction, index) => {
-                const isExpanded = expandedItems.has(interaction.id);
+              {filteredInteractions.slice(0, visibleCount).map((interaction, index) => {
+                const isExpanded = expandedItem === interaction.id;
                 
                 return (
                 <div
@@ -394,62 +529,32 @@ const History = () => {
 
                   {/* Collapsible Content */}
                   {isExpanded && (
-                    <div className="mt-4 space-y-3 animate-in">
-                      {/* Query Section */}
-                      {interaction.query && (
-                        <div>
-                          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                            Query
-                          </p>
-                          <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3">
-                            {interaction.query}
-                          </p>
-                        </div>
-                      )}
-
-                      {/* Response Section */}
-                      {interaction.response && (
-                        <div>
-                          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                            AI Analysis
-                          </p>
-                          <div className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3">
-                            {(() => {
-                              // If response is a string, render directly
-                              if (typeof interaction.response === 'string') {
-                                return <p>{interaction.response}</p>;
-                              }
-
-                              // If response is an array, render each item as a string
-                              if (Array.isArray(interaction.response)) {
-                                return (
-                                  <ul className="space-y-1 list-disc pl-5">
-                                    {interaction.response.map((item, idx) => (
-                                      <li key={idx}>
-                                        {typeof item === "object"
-                                          ? <pre className="whitespace-pre-wrap">{JSON.stringify(item, null, 2)}</pre>
-                                          : String(item)}
-                                      </li>
-                                    ))}
-                                  </ul>
-                                );
-                              }
-
-                              // If response is an object, pretty print it
-                              if (typeof interaction.response === 'object' && interaction.response !== null) {
-                                return (
-                                  <pre className="whitespace-pre-wrap text-xs">
-                                    {JSON.stringify(interaction.response, null, 2)}
-                                  </pre>
-                                );
-                              }
-
-                              // Fallback: render as string
-                              return <p className="text-xs">{String(interaction.response)}</p>;
-                            })()}
+                    <div className="mt-4 max-h-72 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 animate-in">
+                      <div className="p-4 space-y-3">
+                        {/* Query Section */}
+                        {interaction.query && (
+                          <div>
+                            <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                              Query
+                            </p>
+                            <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3">
+                              {interaction.query}
+                            </p>
                           </div>
-                        </div>
-                      )}
+                        )}
+
+                        {/* Response Section */}
+                        {interaction.response && (
+                          <div>
+                            <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                              AI Analysis
+                            </p>
+                            <div className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 space-y-2">
+                              <FormattedResponse response={interaction.response} />
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -473,10 +578,17 @@ const History = () => {
         </div>
 
         {/* Load More Button */}
-        {hasMore && !loadingMore && filteredInteractions.length > 0 && (
+        {(visibleCount < filteredInteractions.length || hasMore) && !loadingMore && filteredInteractions.length > 0 && (
           <div className="p-6 border-t border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 rounded-2xl">
             <button
-              onClick={() => loadUserInteractions(true)}
+              onClick={() => {
+                const nextCount = visibleCount + 6;
+                setVisibleCount(nextCount);
+                // If we have shown everything loaded so far, fetch more from Firestore
+                if (nextCount >= filteredInteractions.length && hasMore) {
+                  loadUserInteractions(true);
+                }
+              }}
               className="w-full px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-semibold rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
             >
               Load More Interactions
