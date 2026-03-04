@@ -35,7 +35,7 @@ import CreatorsCorner from './Creator\'sCorner';
 import Footer from './components/Footer';
 
 import ErrorBoundary from './components/ErrorBoundary';
-import { MemoryProvider } from './MemoryContext';
+
 import { AccountProvider } from './AccountContext';
 import { NotificationsProvider } from './context/NotificationsContext';
 import AuthForm from './components/AuthForm';
@@ -246,14 +246,13 @@ const AppContent = () => {
       <AccountProvider>
         <NotificationsProvider>
         
-          <MemoryProvider>
+      
 
             <Routes>
               <Route path="/onboarding" element={<PrivateRoute><OnboardingContainer /></PrivateRoute>} />
               <Route path="/login" element={<PublicRoute><AuthForm /></PublicRoute>} />
             </Routes>
 
-          </MemoryProvider>
         
         </NotificationsProvider>
       </AccountProvider>
@@ -298,7 +297,7 @@ const AppContent = () => {
 
              <NotificationsProvider>
              
-                <MemoryProvider>
+               
 
                   <WarningModal
                     isOpen={idle.isWarning}
@@ -337,7 +336,7 @@ const AppContent = () => {
                     <UpgradeModal onClose={() => setShowUpgradeModal(false)} />
                   )}
 
-                </MemoryProvider>
+                
             
               </NotificationsProvider>
 

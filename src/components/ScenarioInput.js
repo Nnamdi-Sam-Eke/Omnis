@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useMemory } from "../MemoryContext";
+
 import { db } from "../firebase";
 import { Trash2, Plus, Tag } from "lucide-react";
-import { generateOmnisContent, expandOmnisText, generateOmnisClarifications } from "../services/omnis-actions";
+import { generateOmnisContent, generateOmnisClarifications } from "../services/omnis-actions";
 import UpgradeModal from "./UpgradeModal";
 import {
   doc,
@@ -272,7 +272,7 @@ export default function ScenarioInput({ onSimulate, setGeneratedResults, setSimu
   const [userToggled, setUserToggled] = useState(false);
   const [results, setResults] = useState([]);
   const [chatHistory, setChatHistory] = useState([]);
-  const { memory, saveToFirestore } = useMemory();
+
   const [error, setError] = useState(null);
   // Local simulation state (restored after refactor)
   // Local fallbacks for results and input in case parent did not provide setters
