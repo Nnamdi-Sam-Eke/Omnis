@@ -159,14 +159,28 @@ const stopLeaderPulse = () => {
       const backup = JSON.parse(backupStr);
       if (backup.sessionId && typeof backup.duration === "number") {
         const sessionRef = doc(db, "users", uid, "sessions", backup.sessionId);
-        await updateDoc(sessionRef, {
+
+        // If the tab was closed cleanly (beforeunload ran), closedAt is set and
+        // we can write an accurate end timestamp. Otherwise treat as a crash.
+        const updatePayload = {
           duration: backup.duration,
           end: serverTimestamp(),
           finalizedFromBackup: true,
-        });
-        console.log(
-          `✅ Finalized crashed session ${backup.sessionId} → ${backup.duration}s`
-        );
+        };
+
+        if (backup.closedAt) {
+          updatePayload.closedViaTabClose = true;
+          console.log(
+            `🚪 Finalizing tab-close session ${backup.sessionId} → ${backup.duration}s`
+          );
+        } else {
+          updatePayload.closedViaCrash = true;
+          console.log(
+            `✅ Finalized crashed session ${backup.sessionId} → ${backup.duration}s`
+          );
+        }
+
+        await updateDoc(sessionRef, updatePayload);
       }
     } catch (e) {
       console.error("Failed to finalize backup session:", e);
@@ -298,9 +312,44 @@ useEffect(() => {
       shared = null;
     }
 
-    // 2) If none exists, create it (THIS is the only time we create a new session)
+    // 1b) beforeunload fires for both refreshes and true closes, so we can't
+    //     rely on it alone. We use a sessionStorage flag ("pendingUnload") to
+    //     tell them apart:
+    //       - Refresh: flag is set by beforeunload and still readable here
+    //         because sessionStorage survives refreshes → restore the session.
+    //       - True close: flag is set but sessionStorage is wiped by the browser
+    //         → flag is gone on next login → treat as closed, finalize + new doc.
+    const isRefresh = sessionStorage.getItem("pendingUnload") === "1";
+    sessionStorage.removeItem("pendingUnload"); // consume immediately
+
+    if (!shared?.sessionId && isRefresh) {
+      const existingId = sessionStorage.getItem("currentSessionId");
+      const existingStart = sessionStorage.getItem("sessionLastLogin");
+      if (existingId && existingStart) {
+        shared = { sessionId: existingId, startIso: existingStart };
+        // Restore ACTIVE_SESSION_KEY so other tabs stay in sync
+        localStorage.setItem(ACTIVE_SESSION_KEY(uid), JSON.stringify(shared));
+        // Restore backup WITHOUT closedAt so finalizePendingSession won't
+        // treat this refresh as a closed session
+        const elapsed = Math.floor(
+          (Date.now() - new Date(existingStart).getTime()) / 1000
+        );
+        localStorage.setItem(
+          BACKUP_KEY(uid),
+          JSON.stringify({
+            sessionId: existingId,
+            duration: elapsed,
+            startTime: new Date(existingStart).getTime(),
+          })
+        );
+        console.log(`🔄 Refresh detected — resuming session → ${existingId}`);
+      }
+    }
+
+    // 2) If none exists (true login or true close), create a new session doc.
+    //    This is the ONLY place a new session document is ever created.
     if (!shared?.sessionId || !shared?.startIso) {
-      // finalize any crashed backup first (your existing crash recovery)
+      // Finalize any crashed/closed backup first
       await finalizePendingSession(uid);
 
       const sessionId =
@@ -319,15 +368,15 @@ useEffect(() => {
       shared = { sessionId, startIso: now.toISOString() };
       localStorage.setItem(ACTIVE_SESSION_KEY(uid), JSON.stringify(shared));
 
-      // also initialize your crash backup (shared across tabs)
+      // Initialize crash backup
       localStorage.setItem(
         BACKUP_KEY(uid),
         JSON.stringify({ sessionId, duration: 0, startTime: now.getTime() })
       );
 
-      console.log(`🚀 New GLOBAL session started → ${sessionId}`);
+      console.log(`🚀 New session started → ${sessionId}`);
     } else {
-      console.log(`🔁 Using existing GLOBAL session → ${shared.sessionId}`);
+      console.log(`🔁 Using existing session → ${shared.sessionId}`);
     }
 
     // 3) Mirror into this tab's sessionStorage so KPI/Chart keep working unchanged
@@ -382,11 +431,59 @@ useEffect(() => {
   };
 }, [user?.uid]);
 
-  // Final attempt on tab close/refresh
+  // ── TAB CLOSE / BROWSER CLOSE teardown ────────────────────
+  // beforeunload fires for BOTH refreshes and true tab/browser closes, so we
+  // use a sessionStorage flag to tell them apart:
+  //   - On a refresh: beforeunload sets the flag, and it's still readable after
+  //     the page reloads because sessionStorage survives refreshes.
+  //   - On a true close: beforeunload sets the flag, but the browser wipes
+  //     sessionStorage along with the tab, so on next login the flag is gone.
+  //
+  // ensureSharedSession reads this flag on mount. If it sees it, it's a refresh
+  // — keep the existing session doc. If it's absent (and a backup exists with
+  // closedAt), it was a real close — finalize and start a new session.
   useEffect(() => {
-   const handleBeforeUnload = () => {
-  if (isLeaderRef.current) void runFirestoreHeartbeat();
-};
+    const handleBeforeUnload = () => {
+      const uid = uidRef.current;
+      if (!uid) return;
+
+      // Mark this as a pending unload. Survives refresh, gone after true close.
+      sessionStorage.setItem("pendingUnload", "1");
+
+      // Compute final elapsed duration
+      const startStr = sessionStorage.getItem("sessionLastLogin");
+      const sessionId = sessionStorage.getItem("currentSessionId");
+      const elapsed = startStr
+        ? Math.floor((Date.now() - new Date(startStr).getTime()) / 1000)
+        : 0;
+
+      // Stamp the backup with closedAt. finalizePendingSession will use this
+      // to write the session's end timestamp — but only if it was a true close.
+      if (sessionId) {
+        localStorage.setItem(
+          BACKUP_KEY(uid),
+          JSON.stringify({
+            sessionId,
+            duration: elapsed,
+            startTime: Date.now() - elapsed * 1000,
+            closedAt: Date.now(),
+          })
+        );
+      }
+
+      // Relinquish leadership so another tab doesn't inherit a stale entry.
+      // On refresh this gets re-elected immediately on mount anyway.
+      localStorage.removeItem(LEADER_KEY(uid));
+
+      // Clear the shared active session key. On a refresh, ensureSharedSession
+      // will see pendingUnload and restore it from sessionStorage instead of
+      // creating a new doc. On a true close, it won't exist so a fresh session
+      // is created on next login — which is exactly what we want.
+      if (isLeaderRef.current) {
+        localStorage.removeItem(ACTIVE_SESSION_KEY(uid));
+      }
+    };
+
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, []);

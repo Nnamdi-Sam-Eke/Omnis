@@ -1,16 +1,11 @@
 // ==============================
 // CLIENT-SIDE GROQ CALL WRAPPER
 // ==============================
-export async function callGroqChat(messages, options = {}) {
-  const backendUrl =
-    process.env.NODE_ENV === "development"
-      ? "http://localhost:5000/api/groq-chat"
-      : "/api/groq-chat";
-
-  const response = await fetch(backendUrl, {
+export async function callGroqChat(messages) {
+  const response = await fetch("/api/groq-chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages, options }),
+    body: JSON.stringify({ messages }),
   });
 
   if (!response.ok) {

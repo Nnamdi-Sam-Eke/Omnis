@@ -2,11 +2,11 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, useLocation, Navigate, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './AuthContext';
-import { toast, Toaster } from 'react-hot-toast';
+import { Toaster } from 'react-hot-toast';
 import { signOut } from "firebase/auth";
-import { auth, db, messaging } from "./firebase";
-import { doc, getDoc, updateDoc, Timestamp, deleteField } from "firebase/firestore";
-import { onMessage } from "firebase/messaging";
+import { auth, db,  } from "./firebase";
+import { doc,updateDoc } from "firebase/firestore";
+
 import {
   collection,
   addDoc,
@@ -35,7 +35,6 @@ import CreatorsCorner from './Creator\'sCorner';
 import Footer from './components/Footer';
 
 import ErrorBoundary from './components/ErrorBoundary';
-import { OmnisProvider } from './context/OmnisContext';
 import { MemoryProvider } from './MemoryContext';
 import { AccountProvider } from './AccountContext';
 import { NotificationsProvider } from './context/NotificationsContext';
@@ -70,7 +69,7 @@ const AppContent = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState('dashboard');
-  const userTier = user?.tier || 'Free';
+  
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [initialSplashDone, setInitialSplashDone] = useState(false);
   const [postLoginSplash, setPostLoginSplash] = useState(false);
@@ -246,7 +245,7 @@ const AppContent = () => {
     return (
       <AccountProvider>
         <NotificationsProvider>
-        <OmnisProvider>
+        
           <MemoryProvider>
 
             <Routes>
@@ -255,7 +254,7 @@ const AppContent = () => {
             </Routes>
 
           </MemoryProvider>
-        </OmnisProvider>
+        
         </NotificationsProvider>
       </AccountProvider>
     );
@@ -298,7 +297,7 @@ const AppContent = () => {
               )}
 
              <NotificationsProvider>
-              <OmnisProvider>
+             
                 <MemoryProvider>
 
                   <WarningModal
@@ -339,7 +338,7 @@ const AppContent = () => {
                   )}
 
                 </MemoryProvider>
-              </OmnisProvider>
+            
               </NotificationsProvider>
 
               {!hideLayout && <Footer />}

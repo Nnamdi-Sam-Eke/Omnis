@@ -8,9 +8,7 @@ import {
   doc,
   collection,
   addDoc,
-  query,
-  orderBy,
-  getDocs,
+ 
   setDoc,
   getDoc,
   serverTimestamp,
@@ -19,7 +17,6 @@ import {
 
 import { useAuth } from "../AuthContext";
 import { ChevronRight, ChevronUp, Lock, Crown, Copy, Undo, Redo, Type, Sparkles, Edit3, Zap } from "lucide-react";
-import ScenarioSimulationCard from "./SimulationResult";
 import ShimmerLoader from "./ShimmerLoader";
 
 const BACKEND_URL = process.env.NODE_ENV === "development"
@@ -914,15 +911,7 @@ const runAnalysisForCurrentScenario = async () => {
           </div>
         </div>
 
-        {/* Right Panel - Results: render SimulationResult with safe local state */}
-        {/* <div className="flex-1 min-w-0">
-          <ScenarioSimulationCard
-            results={generatedResultsLocal}
-            setResults={updateGeneratedResults}
-            loading={simulationLoadingLocal}
-            simulationInput={simulationInputLocal}
-          />
-        </div> */}
+       
       </div>
 
       {/* Upgrade Modal */}

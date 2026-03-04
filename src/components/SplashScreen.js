@@ -9,7 +9,7 @@ export default function SplashScreen() {
   const [showSplash, setShowSplash] = useState(true)
 
   useEffect(() => {
-    const timeout = setTimeout(() => setShowSplash(false), 7000)
+    const timeout = setTimeout(() => setShowSplash(false), 4000)
     return () => clearTimeout(timeout)
   }, [])
 

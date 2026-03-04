@@ -1,27 +1,23 @@
 import React, { useState, useEffect } from 'react';
-// Import Firebase storage, auth, and firestore modules
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage'; // Remove `storage`
 import { useAuth } from "../AuthContext";
-import { storage } from '../firebase';
 import { getAuth } from 'firebase/auth';
-import { db, auth } from '../firebase';  // adjust path if needed
-import { doc, getDoc, updateDoc, serverTimestamp} from 'firebase/firestore';
+import { db } from '../firebase';
+import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import imageCompression from 'browser-image-compression';
 import { Camera, Edit3, Save, User, Mail, Phone, MapPin, Info, Check, X } from 'lucide-react';
 
 const ProfilePage = () => {
-  const { user } = useAuth();
+  const { user, currentUser } = useAuth();
+  const auth = getAuth();
+
   const [userData, setUserData] = useState(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("personal");
-  const [image, setImage] = useState(null); // Declare the image state variable
-  const [imageUrl, setImageUrl] = useState(''); // Store uploaded image URL
-  const [progress, setProgress] = useState(0); // Track upload progress
   const [errorMessage, setErrorMessage] = useState("");
   const [imagePreview, setImagePreview] = useState(null);
-  const [imageBase64, setImageBase64] = useState('');
-  
+  const [imageBase64, setImageBase64] = useState(null);
+
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [profilePicture, setProfilePicture] = useState(null);
@@ -32,172 +28,81 @@ const ProfilePage = () => {
   const [country, setCountry] = useState("");
   const [isEditable, setIsEditable] = useState(false);
   const [showPopUp, setShowPopUp] = useState(null);
-  const { currentUser } = useAuth();
-  const auth = getAuth();
-
-  // Store original values for cancel functionality
   const [originalValues, setOriginalValues] = useState({});
 
-  // Handle image file selection
   const handleImageChange = async (e) => {
     const file = e.target.files[0];
-    if (file) {
-        const options = {
-            maxSizeMB: 0.3,  // reduce to ~300KB max
-            maxWidthOrHeight: 800,
-            useWebWorker: true
-        };
-        try {
-            const compressedFile = await imageCompression(file, options);
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                setImageBase64(reader.result);
-                setImagePreview(reader.result);
-            };
-            reader.readAsDataURL(compressedFile);
-        } catch (error) {
-            console.error('Error compressing the image', error);
-        }
+    if (!file) return;
+    const options = { maxSizeMB: 0.3, maxWidthOrHeight: 800, useWebWorker: true };
+    try {
+      const compressed = await imageCompression(file, options);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImageBase64(reader.result);
+        setImagePreview(reader.result);
+      };
+      reader.readAsDataURL(compressed);
+    } catch (error) {
+      console.error('Error compressing the image', error);
     }
-};
-
-// Handle profile picture save to Firestore
-const saveProfilePicture = async () => {
-  const auth = getAuth();
-  const user = auth.currentUser;
-
-  if (!user) {
-      alert('No user is logged in.');
-      return;
-  }
-
-  if (imageBase64) {
-      try {
-          const userRef = doc(db, 'users', user.uid);  // dynamically gets the user's document
-          await updateDoc(userRef, {
-            profilePicture: imageBase64,
-        });
-        alert('Profile picture updated successfully!');
-        
-        // ✅ Update the main profile picture too
-        setProfilePicture(imageBase64);
-        
-        // ✅ Clear preview and file input after saving
-        setImageBase64(null);
-        setImagePreview(null);
-        
-
-      } catch (error) {
-          console.error('Error saving profile picture: ', error);
-          alert('Error updating profile picture.');
-      }
-  } else {
-      alert('Please select an image.');
-  }
-};
-
-  // Update the upload function to use the new Firebase modular API
-  const handleUpload = async () => {
-    if (!image) {
-      alert("Please select an image to upload.");
-      return;
-    }
-  
-    if (!user) {
-      alert("You need to be logged in to upload an image.");
-      return;
-    }
-  
-    const storageRef = ref(storage, `images/${user.uid}/${image.name}`);
-    const uploadTask = uploadBytesResumable(storageRef, image);
-  
-    uploadTask.on(
-      "state_changed",
-      (snapshot) => {
-        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-        setProgress(progress);
-      },
-      (error) => {
-        console.error("Upload error:", error);
-        alert("Failed to upload image.");
-      },
-      async () => {
-        const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-        setImageUrl(downloadURL);
-        alert("Image uploaded successfully!");
-  
-        // Optionally update Firestore with the new image URL
-        await updateUserImage(downloadURL);
-      }
-    );
   };
 
-  const updateUserImage = async (downloadURL) => {
+  const saveProfilePicture = async () => {
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser) { alert('No user is logged in.'); return; }
+    if (!imageBase64) { alert('Please select an image.'); return; }
+
     try {
-      const userRef = doc(db, "users", currentUser.uid);
-      await updateDoc(userRef, {
-        imageUrl: downloadURL, // Save image URL to Firestore
-      });
+      const userRef = doc(db, 'users', firebaseUser.uid);
+      await updateDoc(userRef, { profilePicture: imageBase64 });
+      setProfilePicture(imageBase64);
+      setImageBase64(null);
+      setShowPopUp("pictureUpdated");
+      setTimeout(() => setShowPopUp(null), 3000);
     } catch (error) {
-      console.error("Error updating user document:", error);
+      console.error('Error saving profile picture:', error);
+      setShowPopUp("error");
+      setTimeout(() => setShowPopUp(null), 3000);
     }
+  };
+
+  const clearImagePreview = () => {
+    setImageBase64(null);
+    setImagePreview(profilePicture);
+    const fileInput = document.getElementById("file-input");
+    if (fileInput) fileInput.value = "";
   };
 
   useEffect(() => {
-    const fetchProfilePicture = async () => {
-        const user = auth.currentUser;
-        if (user) {
-            const userRef = doc(db, 'users', user.uid);
-            const userSnap = await getDoc(userRef);
-
-            if (userSnap.exists()) {
-                const data = userSnap.data();
-                if (data.profilePicture) {
-                    setImagePreview(data.profilePicture);
-                }
-            } else {
-                console.log('No such document!');
-            }
-        }
-    };
-
-    fetchProfilePicture();
-}, []);
-
-useEffect(() => {
-  const fetchUserData = async () => {
+    const fetchUserData = async () => {
       if (!user) return;
-
       try {
-          const userRef = doc(db, "users", user.uid);
-          const userSnap = await getDoc(userRef);
-
-          if (userSnap.exists()) {
-              const userData = userSnap.data();
-              setUserData(userData);
-              setFirstName(userData.firstname || "");
-              setLastName(userData.lastname || "");
-              setBio(userData.bio || "");
-              setEmail(userData.email || "");
-              setPhone(userData.phone || "");
-              setCity(userData.city || "");
-              setCountry(userData.country || "");
-
-              // 👉 Add this to handle profile picture
-              setProfilePicture(userData.profilePicture || null);
-          } else {
-              console.error("No user data found in Firestore!");
-          }
+        const userRef = doc(db, "users", user.uid);
+        const userSnap = await getDoc(userRef);
+        if (userSnap.exists()) {
+          const data = userSnap.data();
+          setUserData(data);
+          setFirstName(data.firstname || "");
+          setLastName(data.lastname || "");
+          setBio(data.bio || "");
+          setEmail(data.email || "");
+          setPhone(data.phone || "");
+          setCity(data.city || "");
+          setCountry(data.country || "");
+          const pic = data.profilePicture || null;
+          setProfilePicture(pic);
+          setImagePreview(pic);
+        } else {
+          console.error("No user data found in Firestore!");
+        }
       } catch (error) {
-          console.error("Error fetching user data:", error.message);
+        console.error("Error fetching user data:", error.message);
       } finally {
-          // Always show skeleton for at least 1.2 seconds
-          setTimeout(() => setInitialLoading(false), 2000);
+        setTimeout(() => setInitialLoading(false), 2000);
       }
-  };
-
-  fetchUserData();
-}, [user]);
+    };
+    fetchUserData();
+  }, [user]);
 
   const handleSaveChanges = async () => {
     if (!user) return;
@@ -207,21 +112,19 @@ useEffect(() => {
       await updateDoc(userRef, {
         firstname: firstName,
         lastname: lastName,
-        bio: bio,
-        email: email,
-        phone: phone,
-        city: city, 
-        country: country,
-        profileUpdated: serverTimestamp(), // ✅ Add this line
+        bio,
+        email,
+        phone,
+        city,
+        country,
+        profileUpdated: serverTimestamp(),
       });
       setShowPopUp("profileUpdated");
       setIsEditable(false);
-      // Hide popup after 3 seconds
       setTimeout(() => setShowPopUp(null), 3000);
     } catch (error) {
       console.error("Error updating profile:", error.message);
       setShowPopUp("error");
-      // Hide popup after 3 seconds
       setTimeout(() => setShowPopUp(null), 3000);
     } finally {
       setLoading(false);
@@ -229,22 +132,11 @@ useEffect(() => {
   };
 
   const handleEdit = () => {
-    // Store original values before editing
-    setOriginalValues({
-      firstName,
-      lastName,
-      bio,
-      email,
-      phone,
-      city,
-      country
-    });
+    setOriginalValues({ firstName, lastName, bio, email, phone, city, country });
     setIsEditable(true);
   };
 
-  // Add the missing handleCancel function
   const handleCancel = () => {
-    // Restore original values
     setFirstName(originalValues.firstName || "");
     setLastName(originalValues.lastName || "");
     setBio(originalValues.bio || "");
@@ -252,54 +144,43 @@ useEffect(() => {
     setPhone(originalValues.phone || "");
     setCity(originalValues.city || "");
     setCountry(originalValues.country || "");
-    
-    // Clear any image preview changes
-    setImageBase64(null);
-    setImagePreview(profilePicture);
-    const fileInput = document.getElementById("file-input");
-    if (fileInput) fileInput.value = "";
-    
+    clearImagePreview();
     setIsEditable(false);
   };
 
-const ProfileSkeleton = () => (
-  <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 p-4">
-    <div className="max-w-4xl mx-auto">
-      <div className="animate-pulse">
-        {/* Header skeleton */}
-        <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-xl p-8 mb-6">
-          <div className="flex flex-col md:flex-row items-center gap-8">
-            <div className="w-32 h-32 rounded-full bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-600 dark:to-gray-700"></div>
-            <div className="flex-1 space-y-4">
-              <div className="h-8 bg-gray-200 dark:bg-gray-600 rounded-lg w-3/4"></div>
-              <div className="h-4 bg-gray-200 dark:bg-gray-600 rounded w-1/2"></div>
-              <div className="h-4 bg-gray-200 dark:bg-gray-600 rounded w-2/3"></div>
+  const ProfileSkeleton = () => (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 p-4">
+      <div className="max-w-4xl mx-auto">
+        <div className="animate-pulse">
+          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-xl p-8 mb-6">
+            <div className="flex flex-col md:flex-row items-center gap-8">
+              <div className="w-32 h-32 rounded-full bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-600 dark:to-gray-700"></div>
+              <div className="flex-1 space-y-4">
+                <div className="h-8 bg-gray-200 dark:bg-gray-600 rounded-lg w-3/4"></div>
+                <div className="h-4 bg-gray-200 dark:bg-gray-600 rounded w-1/2"></div>
+                <div className="h-4 bg-gray-200 dark:bg-gray-600 rounded w-2/3"></div>
+              </div>
             </div>
           </div>
-        </div>
-        
-        {/* Tabs skeleton */}
-        <div className="flex gap-2 mb-6">
-          {[1, 2, 3].map(i => (
-            <div key={i} className="h-12 bg-gray-200 dark:bg-gray-600 rounded-full w-32"></div>
-          ))}
-        </div>
-        
-        {/* Content skeleton */}
-        <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-xl p-8">
-          <div className="space-y-6">
+          <div className="flex gap-2 mb-6">
             {[1, 2, 3].map(i => (
-              <div key={i} className="space-y-2">
-                <div className="h-4 bg-gray-200 dark:bg-gray-600 rounded w-1/4"></div>
-                <div className="h-10 bg-gray-100 dark:bg-gray-700 rounded-lg"></div>
-              </div>
+              <div key={i} className="h-12 bg-gray-200 dark:bg-gray-600 rounded-full w-32"></div>
             ))}
+          </div>
+          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-xl p-8">
+            <div className="space-y-6">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="space-y-2">
+                  <div className="h-4 bg-gray-200 dark:bg-gray-600 rounded w-1/4"></div>
+                  <div className="h-10 bg-gray-100 dark:bg-gray-700 rounded-lg"></div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
     </div>
-  </div>
-);
+  );
 
   if (initialLoading) return <ProfileSkeleton />;
 
@@ -342,13 +223,11 @@ const ProfileSkeleton = () => (
       {showPopUp && (
         <div className="fixed top-6 right-6 z-50 animate-in slide-in-from-top-2 duration-300">
           <div className={`flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl border backdrop-blur-lg ${
-            showPopUp === "error" 
+            showPopUp === "error"
               ? "bg-red-50/90 border-red-200 text-red-800 dark:bg-red-900/90 dark:border-red-800 dark:text-red-200"
               : "bg-green-50/90 border-green-200 text-green-800 dark:bg-green-900/90 dark:border-green-800 dark:text-green-200"
           }`}>
-            <div className={`w-2 h-2 rounded-full ${
-              showPopUp === "error" ? "bg-red-500" : "bg-green-500"
-            }`} />
+            <div className={`w-2 h-2 rounded-full ${showPopUp === "error" ? "bg-red-500" : "bg-green-500"}`} />
             <span className="font-medium">
               {showPopUp === "profileUpdated" && "Profile updated successfully!"}
               {showPopUp === "pictureUpdated" && "Profile picture updated successfully!"}
@@ -366,9 +245,7 @@ const ProfileSkeleton = () => (
               <div className="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
               <div className="absolute inset-0 w-8 h-8 border-3 border-green-500/30 rounded-full animate-pulse"></div>
             </div>
-            <span className="text-lg font-medium text-gray-700 dark:text-gray-300">
-              Saving changes...
-            </span>
+            <span className="text-lg font-medium text-gray-700 dark:text-gray-300">Saving changes...</span>
           </div>
         </div>
       )}
@@ -380,9 +257,9 @@ const ProfileSkeleton = () => (
             {/* Profile Picture */}
             <div className="relative group">
               <div className="relative">
-                {profilePicture || imagePreview ? (
+                {imagePreview ? (
                   <img
-                    src={imagePreview || profilePicture}
+                    src={imagePreview}
                     alt="Profile"
                     className="w-32 h-32 rounded-full object-cover border-4 border-white shadow-2xl shadow-blue-500/20 group-hover:shadow-blue-500/40 transition-all duration-300"
                   />
@@ -391,8 +268,6 @@ const ProfileSkeleton = () => (
                     <User className="w-16 h-16 text-white" />
                   </div>
                 )}
-                
-                {/* Upload Button */}
                 <button
                   onClick={() => document.getElementById("file-input").click()}
                   className="absolute -bottom-2 -right-2 w-10 h-10 bg-blue-500 hover:bg-blue-600 rounded-full flex items-center justify-center shadow-lg transition-all duration-200 hover:scale-110"
@@ -400,8 +275,7 @@ const ProfileSkeleton = () => (
                   <Camera className="w-5 h-5 text-white" />
                 </button>
               </div>
-              
-              {/* Save Picture Button */}
+
               {imageBase64 && (
                 <div className="absolute -bottom-16 left-1/2 transform -translate-x-1/2 flex gap-2">
                   <button
@@ -411,12 +285,7 @@ const ProfileSkeleton = () => (
                     Save
                   </button>
                   <button
-                    onClick={() => {
-                      setImageBase64(null);
-                      setImagePreview(null);
-                      const fileInput = document.getElementById("file-input");
-                      if (fileInput) fileInput.value = "";
-                    }}
+                    onClick={clearImagePreview}
                     className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 hover:scale-105 shadow-lg"
                   >
                     Cancel
@@ -430,17 +299,11 @@ const ProfileSkeleton = () => (
               <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
                 {firstName || "John"} {lastName || "Doe"}
               </h1>
-              <p className="text-gray-600 dark:text-gray-300 text-lg mb-4">
-                {bio || "No bio available"}
-              </p>
-              
-              {/* Quick Stats */}
+              <p className="text-gray-600 dark:text-gray-300 text-lg mb-4">{bio || "No bio available"}</p>
               <div className="flex flex-wrap gap-4 justify-center md:justify-start">
                 <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/30 px-4 py-2 rounded-full">
                   <Mail className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                  <span className="text-sm text-blue-600 dark:text-blue-400 font-medium">
-                    {email || "No email"}
-                  </span>
+                  <span className="text-sm text-blue-600 dark:text-blue-400 font-medium">{email || "No email"}</span>
                 </div>
                 <div className="flex items-center gap-2 bg-green-50 dark:bg-green-900/30 px-4 py-2 rounded-full">
                   <MapPin className="w-4 h-4 text-green-600 dark:text-green-400" />
@@ -452,14 +315,7 @@ const ProfileSkeleton = () => (
             </div>
           </div>
 
-          {/* Hidden file input */}
-          <input
-            type="file"
-            accept="image/*"
-            id="file-input"
-            onChange={handleImageChange}
-            className="hidden"
-          />
+          <input type="file" accept="image/*" id="file-input" onChange={handleImageChange} className="hidden" />
         </div>
 
         {/* Error Message */}
@@ -504,32 +360,11 @@ const ProfileSkeleton = () => (
                   </div>
                   <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200">Personal Information</h2>
                 </div>
-                
                 <div className="grid gap-6 md:grid-cols-2">
-                  <ModernInput 
-                    label="First Name" 
-                    value={firstName} 
-                    editable={isEditable} 
-                    onChange={setFirstName}
-                    placeholder="Enter your first name"
-                  />
-                  <ModernInput 
-                    label="Last Name" 
-                    value={lastName} 
-                    editable={isEditable} 
-                    onChange={setLastName}
-                    placeholder="Enter your last name"
-                  />
+                  <ModernInput label="First Name" value={firstName} editable={isEditable} onChange={setFirstName} placeholder="Enter your first name" />
+                  <ModernInput label="Last Name" value={lastName} editable={isEditable} onChange={setLastName} placeholder="Enter your last name" />
                 </div>
-                
-                <ModernInput 
-                  label="Bio" 
-                  value={bio} 
-                  editable={isEditable} 
-                  onChange={setBio} 
-                  isTextArea
-                  placeholder="Tell us about yourself..."
-                />
+                <ModernInput label="Bio" value={bio} editable={isEditable} onChange={setBio} isTextArea placeholder="Tell us about yourself..." />
               </div>
             )}
 
@@ -541,24 +376,9 @@ const ProfileSkeleton = () => (
                   </div>
                   <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200">Contact Information</h2>
                 </div>
-                
                 <div className="grid gap-6 md:grid-cols-2">
-                  <ModernInput 
-                    label="Email Address" 
-                    value={email} 
-                    editable={isEditable} 
-                    onChange={setEmail}
-                    placeholder="your.email@example.com"
-                    type="email"
-                  />
-                  <ModernInput 
-                    label="Phone Number" 
-                    value={phone} 
-                    editable={isEditable} 
-                    onChange={setPhone}
-                    placeholder="+1 (555) 123-4567"
-                    type="tel"
-                  />
+                  <ModernInput label="Email Address" value={email} editable={isEditable} onChange={setEmail} placeholder="your.email@example.com" type="email" />
+                  <ModernInput label="Phone Number" value={phone} editable={isEditable} onChange={setPhone} placeholder="+1 (555) 123-4567" type="tel" />
                 </div>
               </div>
             )}
@@ -571,22 +391,9 @@ const ProfileSkeleton = () => (
                   </div>
                   <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200">Address Information</h2>
                 </div>
-                
                 <div className="grid gap-6 md:grid-cols-2">
-                  <ModernInput 
-                    label="City" 
-                    value={city} 
-                    editable={isEditable} 
-                    onChange={setCity}
-                    placeholder="Enter your city"
-                  />
-                  <ModernInput 
-                    label="Country" 
-                    value={country} 
-                    editable={isEditable} 
-                    onChange={setCountry}
-                    placeholder="Enter your country"
-                  />
+                  <ModernInput label="City" value={city} editable={isEditable} onChange={setCity} placeholder="Enter your city" />
+                  <ModernInput label="Country" value={country} editable={isEditable} onChange={setCountry} placeholder="Enter your country" />
                 </div>
               </div>
             )}
@@ -603,25 +410,18 @@ const ProfileSkeleton = () => (
               }`}
             >
               {isEditable ? (
-                <>
-                  <Save className="w-5 h-5" />
-                  Save Changes
-                </>
+                <><Save className="w-5 h-5" /> Save Changes</>
               ) : (
-                <>
-                  <Edit3 className="w-5 h-5" />
-                  Edit Profile
-                </>
+                <><Edit3 className="w-5 h-5" /> Edit Profile</>
               )}
             </button>
-            
+
             {isEditable && (
               <button
                 onClick={handleCancel}
                 className="flex items-center gap-3 px-6 py-3 rounded-xl font-medium bg-gray-500 hover:bg-gray-600 text-white transition-all duration-200 hover:scale-105 shadow-lg"
               >
-                <X className="w-5 h-5" />
-                Cancel
+                <X className="w-5 h-5" /> Cancel
               </button>
             )}
           </div>
@@ -633,9 +433,7 @@ const ProfileSkeleton = () => (
 
 const ModernInput = ({ label, value, onChange, editable, isTextArea, placeholder, type = "text" }) => (
   <div className="group">
-    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-      {label}
-    </label>
+    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">{label}</label>
     {editable ? (
       <div className="relative">
         {isTextArea ? (

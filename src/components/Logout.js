@@ -3,7 +3,7 @@ import { useAuth } from "../AuthContext";
 import { useNavigate } from "react-router-dom";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-import LogoutSplash from "./components/LogoutSplash"; // Ensure this component exists and handles message + fade
+import LogoutSplash from "./components/LogoutSplash";
 
 const Logout = () => {
   const { logout } = useAuth();
@@ -18,9 +18,6 @@ const Logout = () => {
   const handleLogout = async () => {
     toast.info("You are being logged out...");
     setShowSplash(true);
-    await delay(1000);
-      console.log("Navigating to /login");
-      navigate("/login");
 
     try {
       console.log("Logout started");
@@ -37,7 +34,7 @@ const Logout = () => {
       setLocalLogoutMessage("Redirecting you to login page...");
       setFade(true);
 
-      await logout(500); // optional delay
+      await logout(500);
       console.log("Logout completed");
 
       await delay(1000);
@@ -54,7 +51,7 @@ const Logout = () => {
   useEffect(() => {
     const inactivityTimeout = setTimeout(() => {
       handleLogout();
-    }, 5 * 60 * 1000); // 5 minutes
+    }, 5 * 60 * 1000);
 
     return () => clearTimeout(inactivityTimeout);
   }, []);

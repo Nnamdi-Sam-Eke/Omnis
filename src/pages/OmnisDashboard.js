@@ -1,4 +1,4 @@
-import React, { useEffect, useState, lazy, Suspense } from 'react';
+import React, { useEffect, useState, Suspense } from 'react';
 import { getAuth } from 'firebase/auth';
 import {
   getFirestore,
@@ -12,7 +12,7 @@ import CommandPalette from '../components/CommandPalette';
 import SkeletonLoader from '../components/SkeletonLoader'; 
 import QuickActions from '../components/QuickActionButtons';
 // Lazy-loaded components
-const ActivityFeed = lazy(() => import('../components/ActivityFeed'));
+// const ActivityFeed = lazy(() => import('../components/ActivityFeed'));
 
 
 const OmnisDashboard = () => {
@@ -21,7 +21,7 @@ const OmnisDashboard = () => {
   const [isCommandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('quickStats');
   const [showShortcuts, setShowShortcuts] = useState(false);
-  const [isTabTransitioning, setIsTabTransitioning] = useState(false);
+  const [isTabTransitioning, ] = useState(false);
   
   const auth = getAuth();
   const db = getFirestore();
@@ -159,7 +159,7 @@ const OmnisDashboard = () => {
 
                 {/* Main Dashboard Grid */}
                 <Suspense fallback={<SkeletonLoader height="h-[300px]" />}>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                  <div className="mb-8">
                     <div>
                       <ActionButtons />
                       <div className="flex justify-center">
@@ -167,7 +167,7 @@ const OmnisDashboard = () => {
                       </div>
                     </div>
                     <div>
-                      <ActivityFeed />
+                      {/* <ActivityFeed /> */}
                     </div>
                   </div>
                   

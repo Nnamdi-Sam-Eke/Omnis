@@ -234,16 +234,16 @@ sessionsSnap.docs.forEach(d => {
       const usersRef = collection(db, "users");
 
       // Total Users
-      const unsubscribeUsers = onSnapshot(
-        usersRef,
-        (snapshot) => {
-          setTotalUsers(snapshot.size);
-        },
-        (err) => {
-          console.error("Error fetching users:", err);
-        }
-      );
-      unsubscribers.push(unsubscribeUsers);
+      // const unsubscribeUsers = onSnapshot(
+      //   usersRef,
+      //   (snapshot) => {
+      //     setTotalUsers(snapshot.size);
+      //   },
+      //   (err) => {
+      //     console.error("Error fetching users:", err);
+      //   }
+      // );
+      // unsubscribers.push(unsubscribeUsers);
 
       // Last Activity (Most recent login)
       const q = query(usersRef, orderBy("lastLogin", "desc"), limit(1));
@@ -316,18 +316,18 @@ sessionsSnap.docs.forEach(d => {
       unsubscribers.push(unsubscribeSimulations);
 
       // Active Users in the last 24 hours
-      const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      const activeQuery = query(usersRef, where("lastLogin", ">", yesterday));
-      const unsubscribeActiveUsers = onSnapshot(
-        activeQuery,
-        (snapshot) => {
-          setActiveUsers(snapshot.size);
-        },
-        (err) => {
-          console.error("Error fetching active users:", err);
-        }
-      );
-      unsubscribers.push(unsubscribeActiveUsers);
+      // const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      // const activeQuery = query(usersRef, where("lastLogin", ">", yesterday));
+      // const unsubscribeActiveUsers = onSnapshot(
+      //   activeQuery,
+      //   (snapshot) => {
+      //     setActiveUsers(snapshot.size);
+      //   },
+      //   (err) => {
+      //     console.error("Error fetching active users:", err);
+      //   }
+      // );
+      // unsubscribers.push(unsubscribeActiveUsers);
 
     } catch (err) {
       console.error("Error setting up listeners:", err);
@@ -398,18 +398,7 @@ sessionsSnap.docs.forEach(d => {
       iconColor: "text-purple-500"
     },
     // ── Users ─────────────────────────────────────────────────────────────────
-    {
-      icon: <FiUser className="text-3xl md:text-4xl" />,
-      title: "Total Users",
-      value: formatNumber(totalUsers),
-      iconColor: "text-blue-500"
-    },
-    {
-      icon: <FiTrendingUp className="text-3xl md:text-4xl" />,
-      title: "Active Users",
-      value: formatNumber(activeUsers),
-      iconColor: "text-teal-500"
-    },
+   
     {
       icon: <FiClock className="text-3xl md:text-4xl" />,
       title: "Last Activity",

@@ -17,7 +17,7 @@ export const OmnisProvider = ({ children }) => {
         chatHistory: []         // Stores past queries & responses
     });
     const [localCache, setLocalCache] = useState([]);   // 🔄 Cache for batching writes
-    const [userId, setUserId] = useState(null);
+    const [userId, setUserI] = useState(null);
 
     useEffect(() => {
         const auth = getAuth();
