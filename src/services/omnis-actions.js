@@ -48,12 +48,10 @@ export async function callGroqChat(messages) {
 function tryExtractJson(text) {
   if (!text || typeof text !== "string") return null;
 
-  // First attempt: direct parse
   try {
     return JSON.parse(text);
   } catch (_) {}
 
-  // Second attempt: extract JSON block
   const firstBrace = text.indexOf("{");
   const lastBrace = text.lastIndexOf("}");
   if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
@@ -67,8 +65,6 @@ function tryExtractJson(text) {
 }
 
 function normalizeClarifications(parsed) {
-  // Expected:
-  // { clarifications: [ {id:"q1", question:"..."}, ... ] }
   const arr = parsed?.clarifications;
   if (!Array.isArray(arr)) return [];
 
@@ -83,8 +79,85 @@ function normalizeClarifications(parsed) {
     .slice(0, 5);
 }
 
+function buildClarificationBlock(clarifications, label = "Clarifications") {
+  if (!clarifications) return "";
+  let pairs = [];
+  if (Array.isArray(clarifications)) {
+    pairs = clarifications
+      .map((c, i) => {
+        const q = (c?.question || `Clarification ${i + 1}`).trim();
+        const a = (c?.answer || "").trim();
+        if (!a) return null;
+        return `- ${q}\n  Answer: ${a}`;
+      })
+      .filter(Boolean);
+  } else if (typeof clarifications === "object") {
+    pairs = Object.entries(clarifications)
+      .map(([q, a]) => `- ${String(q).trim()}\n  Answer: ${String(a).trim()}`)
+      .filter(Boolean);
+  }
+  if (!pairs.length) return "";
+  return `${label}:\n${pairs.join("\n")}`;
+}
+
 // ==============================
-// 1) CLARIFYING QUESTIONS (NEW)
+// 0) DECISION BLUEPRINT (SYSTEM ARCHITECT MODE)
+// ==============================
+export async function buildDecisionBlueprint(scenarioText, clarifications = null) {
+  const systemPrompt = `
+You are Omnis, acting as a systems architect for decision-making.
+
+Goal: convert messy scenario text into a clean decision model.
+Do NOT give advice. Do NOT recommend. Do NOT write long explanations.
+
+Return JSON only, in this exact shape:
+
+{
+  "decision": "one-line decision to make",
+  "time_horizon": "e.g., 6 months / 30 days / 1 year / unknown",
+  "objective": ["what success means (1-3 items)"],
+  "constraints": ["limits (money/time/skills/energy/legal/etc)"],
+  "options": [
+    { "id": "A", "name": "option name", "description": "short" },
+    { "id": "B", "name": "option name", "description": "short" }
+  ],
+  "variables": [
+    { "name": "income_per_task", "value": 5000, "unit": "NGN", "confidence": "High" }
+  ],
+  "missing_info": [
+    { "id": "m1", "question": "what must be known to simulate better?" }
+  ],
+  "assumptions": [
+    { "id": "a1", "assumption": "only if needed", "fragility": "what breaks it" }
+  ]
+}
+
+Rules:
+- Use only options present in the scenario (don't invent options).
+- Extract numeric variables when present.
+- If unclear, set value null and add to missing_info.
+- Keep it compact.
+`.trim();
+
+  const clarificationBlock = buildClarificationBlock(clarifications, "Clarifications");
+
+  const userPrompt = `
+Scenario:
+${scenarioText}
+${clarificationBlock ? `\n${clarificationBlock}\n` : ""}
+Return ONLY valid JSON.
+`.trim();
+
+  const raw = await callGroqChat([
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userPrompt },
+  ]);
+
+  return tryExtractJson(raw);
+}
+
+// ==============================
+// 1) CLARIFYING QUESTIONS
 // ==============================
 export async function generateOmnisClarifications(scenarioText) {
   const systemPrompt = `
@@ -129,11 +202,9 @@ Return ONLY valid JSON in the required format.
   ];
 
   const raw = await callGroqChat(messages);
-
   const parsed = tryExtractJson(raw);
   const normalized = normalizeClarifications(parsed);
 
-  // Fallback: if model didn't comply, return a minimal safe set
   if (!normalized.length) {
     return [
       { id: "q1", question: "What outcome matters most to you here (success definition)?" },
@@ -146,13 +217,11 @@ Return ONLY valid JSON in the required format.
 }
 
 // ==============================
-// 2) STEP 1 – CONCISE SNAPSHOT + SUGGESTED PATH
+// 2) STEP 1 - SNAPSHOT + SUGGESTED PATH
 // ==============================
 export async function generateOmnisContent(scenarioText, clarifications = null) {
   const systemPrompt = `
-You are Omnis – a digital-twin reasoning engine.
-
-You provide ULTRA-CONCISE decision snapshots.
+You are Omnis - a decision partner. Prioritize structure, systems thinking, and clear reasoning.
 You MUST suggest one best-fit path (based on priorities + constraints), while still presenting alternatives fairly.
 
 Hard constraints:
@@ -168,60 +237,47 @@ Tone:
 - Practical
 `.trim();
 
-  const clarificationBlock = (() => {
-    if (!clarifications) return "";
-    // clarifications can be array OR object map
-    let pairs = [];
-    if (Array.isArray(clarifications)) {
-      pairs = clarifications
-        .map((c, i) => {
-          const q = (c?.question || `Clarification ${i + 1}`).trim();
-          const a = (c?.answer || "").trim();
-          if (!a) return null;
-          return `- ${q}\n  Answer: ${a}`;
-        })
-        .filter(Boolean);
-    } else if (typeof clarifications === "object") {
-      pairs = Object.entries(clarifications)
-        .map(([q, a]) => `- ${String(q).trim()}\n  Answer: ${String(a).trim()}`)
-        .filter(Boolean);
-    }
-    if (!pairs.length) return "";
-    return `
-Clarifications (higher priority than assumptions):
-${pairs.join("\n")}
-`.trim();
-  })();
+  const blueprint = await buildDecisionBlueprint(scenarioText, clarifications);
+
+  if (!blueprint || typeof blueprint !== "object") {
+    return await callGroqChat([
+      { role: "system", content: systemPrompt },
+      {
+        role: "user",
+        content: `Your blueprint failed. Ask 3 specific missing questions needed to simulate:\n\nScenario:\n${scenarioText}`,
+      },
+    ]);
+  }
+
+  const clarificationBlock = buildClarificationBlock(clarifications, "Clarifications (higher priority than assumptions)");
 
   const userPrompt = `
-Analyze this scenario briefly.
+You are Omnis - a decision partner who thinks like a systems architect.
 
-${clarificationBlock ? `${clarificationBlock}\n\n` : ""}
+Use the Decision Blueprint as your source of truth.
+Do not invent new options.
+If blueprint.missing_info is non-empty, ask for the top 3 missing items first.
 
-Required structure:
+Decision Blueprint (JSON):
+${JSON.stringify(blueprint, null, 2)}
+${clarificationBlock ? `\n${clarificationBlock}\n` : ""}
+Now produce the output using this structure:
 
-**Decision Snapshot**
-- 1 bullet: core situation + pressure
+**System Map**
+- Decision
+- Objective
+- Constraints
+- Options
 
-**Options**
-- 2–3 options, one line each
-
-**Trade-offs (per option)**
-For each option:
-- Improves: (5–8 words)
-- Breaks: (5–8 words)
-- Risk: Low/Medium/High
+**Key Trade-offs**
+- 1-2 bullets per option
 
 **Suggested Path**
-- Suggested option: [ONE option]
-- Why: exactly 2 bullets
-- Override rule: "If your #1 priority is ___, choose ___ instead."
+- One option + 2 bullets why
+- One "override rule"
 
 **Next 48 Hours**
-- 1 concrete action
-
-Scenario:
-${scenarioText}
+- 1 action
 `.trim();
 
   const messages = [
@@ -233,11 +289,11 @@ ${scenarioText}
 }
 
 // ==============================
-// 3) STEP 2 – LAYERED EXPANSION (COMPRESSED + DECISIVE)
+// 3) STEP 2 - LAYERED EXPANSION (COMPRESSED + DECISIVE)
 // ==============================
 export async function expandOmnisText(previousOutput, clarifications = null) {
   const systemPrompt = `
-You are Omnis – a decision intelligence engine.
+You are Omnis - a decision intelligence engine.
 
 Expand the brief overview into layered analysis that reduces decision fatigue.
 
@@ -260,44 +316,19 @@ Tone:
 - Practical
 `.trim();
 
-  const clarificationNote = (() => {
-    if (!clarifications) return "";
-    // same flexibility as generateOmnisContent
-    let pairs = [];
-    if (Array.isArray(clarifications)) {
-      pairs = clarifications
-        .map((c, i) => {
-          const q = (c?.question || `Clarification ${i + 1}`).trim();
-          const a = (c?.answer || "").trim();
-          if (!a) return null;
-          return `- ${q}\n  Answer: ${a}`;
-        })
-        .filter(Boolean);
-    } else if (typeof clarifications === "object") {
-      pairs = Object.entries(clarifications)
-        .map(([q, a]) => `- ${String(q).trim()}\n  Answer: ${String(a).trim()}`)
-        .filter(Boolean);
-    }
-    if (!pairs.length) return "";
-    return `
-Clarifications provided by the user (override assumptions):
-${pairs.join("\n")}
-`.trim();
-  })();
+  const clarificationNote = buildClarificationBlock(clarifications, "Clarifications provided by the user (override assumptions)");
 
   const userPrompt = `
 Original brief overview:
 ${previousOutput}
-
-${clarificationNote ? `\n\n${clarificationNote}\n\n` : "\n\n"}
-
+${clarificationNote ? `\n${clarificationNote}\n` : ""}
 Structure output as:
 
-## 🔎 Summary Layer (default)
+## Summary Layer (default)
 ### Decision Snapshot
 - 2 bullets: core situation
 ### Options
-- 2–3 options
+- 2-3 options
 ### Trade-offs
 For each option:
 - Improves
@@ -311,7 +342,7 @@ For each option:
 ### Next 7 Days
 - 3 actions
 
-## 🔍 Context Layer
+## Context Layer
 ### Hidden Constraints
 - Max 5 bullets
 ### Assumptions & Fragility
@@ -319,12 +350,12 @@ For each option:
 ### Key Uncertainties
 - 3 bullets max
 
-## 🧠 Deep Layer (optional, compressed)
-### Cause → Effect (per option)
-### Timeline Highlights (0–30, 30–90, 90–365)
+## Deep Layer (optional, compressed)
+### Cause -> Effect (per option)
+### Timeline Highlights (0-30, 30-90, 90-365)
 ### Reversibility (Easy/Moderate/Hard)
 ### Red Flags (max 4)
-### 7–14 Day Plan (max 5)
+### 7-14 Day Plan (max 5)
 `.trim();
 
   const messages = [
