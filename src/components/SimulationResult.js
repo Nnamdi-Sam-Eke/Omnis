@@ -48,7 +48,7 @@ function detectCurrency(queryText) {
 }
 
 function normalizeCurrency(text, queryCurrency) {
-  if (!text || !queryCurrency) return text;
+  if (!text || !queryCurrency || typeof text !== 'string') return text;
   // If the response already uses the correct symbol, nothing to do
   if (text.includes(queryCurrency.symbol)) return text;
   // Only replace if the response is using a WRONG symbol ($ is the most common LLM fallback)
@@ -56,7 +56,7 @@ function normalizeCurrency(text, queryCurrency) {
   let result = text;
   for (const wrong of wrongSymbols) {
     // Replace symbol when followed by a number (e.g. $1,000 or $500k)
-    const re = new RegExp(`\${wrong}(?=\s?\d)`, 'g');
+    const re = new RegExp(`\\${wrong}(?=\\s?\\d)`, 'g');
     result = result.replace(re, queryCurrency.symbol);
   }
   // Also replace written-out wrong currency names (e.g. "dollars" → "naira")
