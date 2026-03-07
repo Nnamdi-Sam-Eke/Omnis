@@ -653,10 +653,33 @@ const runAnalysisForCurrentScenario = async () => {
   const scenario = pendingScenarios[currentScenarioIndex];
   if (!scenario) return;
 
-  // basic answer validation (optional, light)
+  // Answer quality validation — two checks:
+  // 1. Every question must have an answer (existing check)
+  // 2. Answers must not be garbage inputs like "no", "none", "zero" —
+  //    these produce confident-looking output grounded in nothing.
   const missing = currentClarifications.some(q => !(currentAnswers[q.id] || "").trim());
   if (missing) {
-    setClarifyError("Please answer the clarifying questions (short answers are fine).");
+    setClarifyError("Please answer all the clarifying questions — short answers are fine.");
+    return;
+  }
+
+  const THIN_ANSWERS = new Set([
+    "no", "none", "zero", "idk", "n/a", "na", "nope", "nothing",
+    "not sure", "unsure", "don't know", "dont know", "no idea",
+    "yes", "ok", "okay", "sure", "fine", "maybe", "perhaps",
+  ]);
+
+  const thinAnswers = currentClarifications.filter(q => {
+    const answer = (currentAnswers[q.id] || "").trim().toLowerCase();
+    return THIN_ANSWERS.has(answer) || answer.length < 3;
+  });
+
+  if (thinAnswers.length > 0) {
+    const count = thinAnswers.length;
+    setClarifyError(
+      `${count} answer${count > 1 ? "s are" : " is"} too brief for Omnis to simulate accurately. ` +
+      `Even a short sentence helps — e.g. "about ₦50k/month" or "maybe 3 months max".`
+    );
     return;
   }
 

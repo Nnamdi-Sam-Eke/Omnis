@@ -512,18 +512,10 @@ const ScenarioSimulationCard = ({ results,
         editedScenarioText += `\n\nUpdated Variables:\n${editBlock}`;
       }
 
-      const omnisResult = await generateOmnisContent(editedScenarioText, clarifications);
-
-      // generateOmnisContent now returns { blueprint, simulation, summary, error }
-      const newOutput = omnisResult?.summary ?? omnisResult;
-      const blueprint = omnisResult?.blueprint ?? null;
-      const simulation = omnisResult?.simulation ?? null;
-
+      const newOutput = await generateOmnisContent(editedScenarioText, clarifications);
       const currency = detectCurrency(result?.query || '');
       replaceScenarioResult(timestamp, {
         ...result.response,
-        blueprint,
-        simulation,
         result: currency ? normalizeCurrency(newOutput, currency) : newOutput
       });
     } catch (err) {
@@ -916,6 +908,317 @@ const ScenarioSimulationCard = ({ results,
     setSpeechState(prev => ({ ...prev, isSpeaking: false, currentSentenceIndex: -1 }));
   }
 
+  // ==============================
+  // RAW DATA FORMATTER
+  // Converts the raw result object into a clean, human-readable
+  // HTML section for PDF exports and markdown for .md exports.
+  // Renders blueprint variables, causal links, simulation paths,
+  // timeline, and clarifications — instead of a JSON wall.
+  // ==============================
+  function formatRawDataAsHTML(result) {
+    if (!result) return '<p>No raw data available.</p>';
+
+    const response = result?.response || {};
+    const blueprint = response?.blueprint || null;
+    const simulation = response?.simulation || null;
+    const clarifications = response?.clarifications || [];
+    const category = result?.category || 'Uncategorized';
+    const timestamp = result?.timestamp
+      ? new Date(result.timestamp).toLocaleString()
+      : 'Unknown';
+
+    let html = '';
+
+    // ── Meta ──────────────────────────────────────────────
+    html += `<div class="rd-section">
+      <div class="rd-meta">
+        <span><strong>Category:</strong> ${category}</span>
+        <span><strong>Timestamp:</strong> ${timestamp}</span>
+      </div>
+    </div>`;
+
+    // ── Clarifications ────────────────────────────────────
+    if (clarifications.length > 0) {
+      html += `<div class="rd-section">
+        <div class="rd-section-title">Clarifications Used</div>
+        <table class="rd-table">
+          <thead><tr><th>#</th><th>Question</th><th>Answer</th></tr></thead>
+          <tbody>
+            ${clarifications.map((c, i) => `
+              <tr>
+                <td class="rd-num">${i + 1}</td>
+                <td>${c.question || '—'}</td>
+                <td class="rd-answer">${c.answer || '—'}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+    }
+
+    // ── Blueprint ─────────────────────────────────────────
+    if (blueprint) {
+      // Decision + objectives + constraints
+      html += `<div class="rd-section">
+        <div class="rd-section-title">Decision Blueprint</div>
+        <div class="rd-row"><span class="rd-label">Decision:</span> ${blueprint.decision || '—'}</div>
+        <div class="rd-row"><span class="rd-label">Time Horizon:</span> ${blueprint.time_horizon || '—'}</div>`;
+
+      if (blueprint.objective?.length) {
+        html += `<div class="rd-row"><span class="rd-label">Objectives:</span>
+          <ul class="rd-list">${blueprint.objective.map(o => `<li>${o}</li>`).join('')}</ul>
+        </div>`;
+      }
+
+      if (blueprint.constraints?.length) {
+        html += `<div class="rd-row"><span class="rd-label">Constraints:</span>
+          <ul class="rd-list">${blueprint.constraints.map(c => `<li>${c}</li>`).join('')}</ul>
+        </div>`;
+      }
+
+      // Options
+      if (blueprint.options?.length) {
+        html += `<div class="rd-subsection-title">Options</div>
+          <table class="rd-table">
+            <thead><tr><th>ID</th><th>Name</th><th>Description</th></tr></thead>
+            <tbody>
+              ${blueprint.options.map(o => `
+                <tr>
+                  <td class="rd-num">${o.id}</td>
+                  <td><strong>${o.name}</strong></td>
+                  <td>${o.description || '—'}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>`;
+      }
+
+      // Variables
+      if (blueprint.variables?.length) {
+        html += `<div class="rd-subsection-title">Variables</div>
+          <table class="rd-table">
+            <thead><tr><th>Variable</th><th>Value</th><th>Type</th><th>Direction</th><th>Confidence</th></tr></thead>
+            <tbody>
+              ${blueprint.variables.map(v => `
+                <tr>
+                  <td><strong>${v.name}</strong></td>
+                  <td>${v.value !== null && v.value !== undefined ? `${v.value}${v.unit ? ' ' + v.unit : ''}` : '—'}</td>
+                  <td>${v.type || '—'}</td>
+                  <td class="rd-direction rd-${v.impact_direction}">${v.impact_direction || '—'}</td>
+                  <td class="rd-confidence rd-conf-${(v.confidence || '').toLowerCase()}">${v.confidence || '—'}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>`;
+      }
+
+      // Causal links
+      if (blueprint.causal_links?.length) {
+        html += `<div class="rd-subsection-title">Causal Links</div>
+          <table class="rd-table">
+            <thead><tr><th>From</th><th>Relationship</th><th>To</th><th>Strength</th></tr></thead>
+            <tbody>
+              ${blueprint.causal_links.map(l => `
+                <tr>
+                  <td>${l.from}</td>
+                  <td class="rd-relationship">${l.relationship}</td>
+                  <td>${l.to}</td>
+                  <td class="rd-strength rd-str-${(l.strength || '').toLowerCase()}">${l.strength || '—'}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>`;
+      }
+
+      // Assumptions
+      if (blueprint.assumptions?.length) {
+        html += `<div class="rd-subsection-title">Assumptions</div>
+          <table class="rd-table">
+            <thead><tr><th>Assumption</th><th>Fragility Trigger</th></tr></thead>
+            <tbody>
+              ${blueprint.assumptions.map(a => `
+                <tr>
+                  <td>${a.assumption}</td>
+                  <td class="rd-fragile">${a.fragility || '—'}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>`;
+      }
+
+      html += `</div>`; // close blueprint section
+    }
+
+    // ── Simulation ────────────────────────────────────────
+    if (simulation) {
+      html += `<div class="rd-section">
+        <div class="rd-section-title">Simulation Results</div>
+        <div class="rd-row">
+          <span class="rd-label">Confidence:</span>
+          <span class="rd-sim-conf rd-conf-${(simulation.simulation_confidence || '').toLowerCase()}">${simulation.simulation_confidence || '—'}</span>
+          <span class="rd-conf-reason"> — ${simulation.confidence_reason || ''}</span>
+        </div>`;
+
+      if (simulation.options?.length) {
+        simulation.options.forEach(opt => {
+          html += `<div class="rd-sim-option">
+            <div class="rd-sim-option-title">Option ${opt.id}: ${opt.name}</div>
+
+            <div class="rd-subsection-title">Probability Paths</div>
+            <table class="rd-table">
+              <thead><tr><th>Path</th><th>Probability</th><th>Narrative</th><th>Key Driver</th></tr></thead>
+              <tbody>
+                <tr class="rd-path-best">
+                  <td><strong>Best</strong></td>
+                  <td>${opt.paths?.best?.probability || '—'}</td>
+                  <td>${opt.paths?.best?.narrative || '—'}</td>
+                  <td>${opt.paths?.best?.key_driver || '—'}</td>
+                </tr>
+                <tr class="rd-path-base">
+                  <td><strong>Base</strong></td>
+                  <td>${opt.paths?.base?.probability || '—'}</td>
+                  <td>${opt.paths?.base?.narrative || '—'}</td>
+                  <td>${opt.paths?.base?.key_driver || '—'}</td>
+                </tr>
+                <tr class="rd-path-fail">
+                  <td><strong>Failure</strong></td>
+                  <td>${opt.paths?.failure?.probability || '—'}</td>
+                  <td>${opt.paths?.failure?.narrative || '—'}</td>
+                  <td>${opt.paths?.failure?.key_driver || '—'}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div class="rd-subsection-title">Timeline</div>
+            <table class="rd-table">
+              <thead><tr><th>Window</th><th>Projection</th></tr></thead>
+              <tbody>
+                <tr><td>0 – 30 days</td><td>${opt.timeline?.['0_30_days'] || '—'}</td></tr>
+                <tr><td>30 – 90 days</td><td>${opt.timeline?.['30_90_days'] || '—'}</td></tr>
+                <tr><td>3 – 12 months</td><td>${opt.timeline?.['3_12_months'] || '—'}</td></tr>
+              </tbody>
+            </table>
+
+            <div class="rd-row">
+              <span class="rd-label">Reversibility:</span>
+              <strong>${opt.reversibility || '—'}</strong>
+              ${opt.reversibility_reason ? ` — ${opt.reversibility_reason}` : ''}
+            </div>
+
+            ${opt.compounding_effects?.length ? `
+            <div class="rd-row"><span class="rd-label">Compounding Effects:</span>
+              <ul class="rd-list">${opt.compounding_effects.map(e => `<li>${e}</li>`).join('')}</ul>
+            </div>` : ''}
+
+            ${opt.fragility_triggers?.length ? `
+            <div class="rd-row"><span class="rd-label">Fragility Triggers:</span>
+              <ul class="rd-list rd-fragile-list">${opt.fragility_triggers.map(t => `<li>${t}</li>`).join('')}</ul>
+            </div>` : ''}
+
+            ${opt.failure_modes?.length ? `
+            <div class="rd-row"><span class="rd-label">Failure Modes:</span>
+              <ul class="rd-list rd-fail-list">${opt.failure_modes.map(m => `<li>${m}</li>`).join('')}</ul>
+            </div>` : ''}
+
+          </div>`;
+        });
+      }
+
+      html += `</div>`; // close simulation section
+    }
+
+    return html;
+  }
+
+  function formatRawDataAsMarkdown(result) {
+    if (!result) return '## Raw Data\n\nNo data available.';
+
+    const response = result?.response || {};
+    const blueprint = response?.blueprint || null;
+    const simulation = response?.simulation || null;
+    const clarifications = response?.clarifications || [];
+    const category = result?.category || 'Uncategorized';
+    const timestamp = result?.timestamp
+      ? new Date(result.timestamp).toLocaleString()
+      : 'Unknown';
+
+    let md = '## Raw Data\n\n';
+    md += `**Category:** ${category}  \n**Timestamp:** ${timestamp}\n\n`;
+
+    if (clarifications.length > 0) {
+      md += '### Clarifications Used\n\n';
+      clarifications.forEach((c, i) => {
+        md += `**Q${i + 1}:** ${c.question || '—'}  \n**A:** ${c.answer || '—'}\n\n`;
+      });
+    }
+
+    if (blueprint) {
+      md += '### Decision Blueprint\n\n';
+      md += `**Decision:** ${blueprint.decision || '—'}  \n`;
+      md += `**Time Horizon:** ${blueprint.time_horizon || '—'}\n\n`;
+
+      if (blueprint.objective?.length) {
+        md += `**Objectives:**\n${blueprint.objective.map(o => `- ${o}`).join('\n')}\n\n`;
+      }
+      if (blueprint.constraints?.length) {
+        md += `**Constraints:**\n${blueprint.constraints.map(c => `- ${c}`).join('\n')}\n\n`;
+      }
+      if (blueprint.options?.length) {
+        md += `**Options:**\n${blueprint.options.map(o => `- **${o.id}. ${o.name}** — ${o.description || ''}`).join('\n')}\n\n`;
+      }
+      if (blueprint.variables?.length) {
+        md += '**Variables:**\n';
+        blueprint.variables.forEach(v => {
+          const val = v.value !== null && v.value !== undefined ? `${v.value}${v.unit ? ' ' + v.unit : ''}` : 'unknown';
+          md += `- ${v.name}: ${val} | ${v.type || '—'} | ${v.impact_direction || '—'} | confidence: ${v.confidence || '—'}\n`;
+        });
+        md += '\n';
+      }
+      if (blueprint.causal_links?.length) {
+        md += '**Causal Links:**\n';
+        blueprint.causal_links.forEach(l => {
+          md += `- ${l.from} → ${l.relationship} → ${l.to} (${l.strength || '—'})\n`;
+        });
+        md += '\n';
+      }
+      if (blueprint.assumptions?.length) {
+        md += '**Assumptions:**\n';
+        blueprint.assumptions.forEach(a => {
+          md += `- ${a.assumption} *(fragility: ${a.fragility || '—'})*\n`;
+        });
+        md += '\n';
+      }
+    }
+
+    if (simulation) {
+      md += '### Simulation Results\n\n';
+      md += `**Confidence:** ${simulation.simulation_confidence || '—'} — ${simulation.confidence_reason || ''}\n\n`;
+
+      simulation.options?.forEach(opt => {
+        md += `#### Option ${opt.id}: ${opt.name}\n\n`;
+        md += `| Path | Probability | Narrative | Key Driver |\n`;
+        md += `|------|-------------|-----------|------------|\n`;
+        md += `| Best | ${opt.paths?.best?.probability || '—'} | ${opt.paths?.best?.narrative || '—'} | ${opt.paths?.best?.key_driver || '—'} |\n`;
+        md += `| Base | ${opt.paths?.base?.probability || '—'} | ${opt.paths?.base?.narrative || '—'} | ${opt.paths?.base?.key_driver || '—'} |\n`;
+        md += `| Failure | ${opt.paths?.failure?.probability || '—'} | ${opt.paths?.failure?.narrative || '—'} | ${opt.paths?.failure?.key_driver || '—'} |\n\n`;
+
+        md += `**Timeline:**\n`;
+        md += `- 0–30 days: ${opt.timeline?.['0_30_days'] || '—'}\n`;
+        md += `- 30–90 days: ${opt.timeline?.['30_90_days'] || '—'}\n`;
+        md += `- 3–12 months: ${opt.timeline?.['3_12_months'] || '—'}\n\n`;
+
+        md += `**Reversibility:** ${opt.reversibility || '—'}${opt.reversibility_reason ? ' — ' + opt.reversibility_reason : ''}\n\n`;
+
+        if (opt.compounding_effects?.length) {
+          md += `**Compounding Effects:**\n${opt.compounding_effects.map(e => `- ${e}`).join('\n')}\n\n`;
+        }
+        if (opt.fragility_triggers?.length) {
+          md += `**Fragility Triggers:**\n${opt.fragility_triggers.map(t => `- ${t}`).join('\n')}\n\n`;
+        }
+        if (opt.failure_modes?.length) {
+          md += `**Failure Modes:**\n${opt.failure_modes.map(m => `- ${m}`).join('\n')}\n\n`;
+        }
+      });
+    }
+
+    return md;
+  }
+
   function exportAsMarkdown(content, tags = [], result = null) {
     if (!consumePremiumTrial("Export report")) return;
     const timestamp = new Date().toISOString();
@@ -935,10 +1238,7 @@ ${content}
 
 ---
 
-## Raw Data
-\`\`\`json
-${JSON.stringify(result, null, 2)}
-\`\`\`
+${formatRawDataAsMarkdown(result)}
 
 ---
 *Generated by Scenario Simulation Tool*
@@ -972,7 +1272,44 @@ ${JSON.stringify(result, null, 2)}
         .tags { background: #f5f5f5; padding: 10px; border-radius: 5px; margin: 10px 0; }
         .tag { background: #007acc; color: white; padding: 2px 8px; border-radius: 3px; margin-right: 5px; font-size: 0.9em; }
         .content { margin: 20px 0; }
-        .raw-data { background: #f8f8f8; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 0.9em; }
+        .raw-data { margin-top: 40px; }
+        .rd-section { margin: 24px 0; padding: 16px; background: #f9f9f9; border-radius: 6px; border-left: 3px solid #007acc; }
+        .rd-section-title { font-size: 1.05em; font-weight: bold; color: #007acc; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+        .rd-subsection-title { font-size: 0.9em; font-weight: bold; color: #444; margin: 14px 0 6px; text-transform: uppercase; letter-spacing: 0.03em; }
+        .rd-meta { display: flex; gap: 24px; font-size: 0.9em; color: #555; }
+        .rd-row { margin: 6px 0; font-size: 0.9em; }
+        .rd-label { font-weight: bold; color: #333; margin-right: 6px; }
+        .rd-table { width: 100%; border-collapse: collapse; font-size: 0.85em; margin: 8px 0; }
+        .rd-table th { background: #e8f0fe; color: #333; text-align: left; padding: 6px 10px; border: 1px solid #ddd; }
+        .rd-table td { padding: 5px 10px; border: 1px solid #eee; vertical-align: top; }
+        .rd-table tr:nth-child(even) td { background: #fafafa; }
+        .rd-num { text-align: center; width: 40px; font-weight: bold; color: #007acc; }
+        .rd-answer { color: #333; font-style: italic; }
+        .rd-list { margin: 4px 0 4px 18px; padding: 0; }
+        .rd-list li { margin: 2px 0; }
+        .rd-direction { font-weight: bold; }
+        .rd-positive { color: #2e7d32; }
+        .rd-negative { color: #c62828; }
+        .rd-neutral { color: #666; }
+        .rd-confidence { font-weight: bold; }
+        .rd-conf-high { color: #2e7d32; }
+        .rd-conf-medium { color: #e65100; }
+        .rd-conf-low { color: #c62828; }
+        .rd-relationship { font-style: italic; color: #555; }
+        .rd-strength { font-weight: bold; }
+        .rd-str-strong { color: #c62828; }
+        .rd-str-moderate { color: #e65100; }
+        .rd-str-weak { color: #888; }
+        .rd-fragile { color: #b71c1c; font-size: 0.85em; }
+        .rd-sim-option { margin: 16px 0; padding: 14px; background: #fff; border: 1px solid #ddd; border-radius: 5px; }
+        .rd-sim-option-title { font-weight: bold; font-size: 1em; color: #333; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid #eee; }
+        .rd-sim-conf { font-weight: bold; margin: 0 4px; }
+        .rd-conf-reason { color: #666; font-size: 0.9em; }
+        .rd-path-best td { background: #f1f8f1 !important; }
+        .rd-path-base td { background: #fafafa !important; }
+        .rd-path-fail td { background: #fff5f5 !important; }
+        .rd-fragile-list li { color: #b71c1c; }
+        .rd-fail-list li { color: #c62828; font-weight: bold; }
         @media print {
             body { print-color-adjust: exact; }
             .no-print { display: none; }
@@ -995,8 +1332,8 @@ ${JSON.stringify(result, null, 2)}
     </div>
     
     <div class="raw-data">
-        <h3>Raw Data</h3>
-        <pre>${JSON.stringify(result, null, 2)}</pre>
+        <h2>Raw Data</h2>
+        ${formatRawDataAsHTML(result)}
     </div>
     
     <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #ccc; color: #666; font-size: 0.9em;">
@@ -1044,17 +1381,14 @@ const handleExplainFurther = async (result, timestamp) => {
   });
 
   try {
-    // ✅ Pass blueprint + simulation so deep layer uses structured data, not just summary text
+    // ✅ Pass the original response as the previousOutput
     const originalContent = result?.response?.result || '';
-    const blueprint = result?.response?.blueprint ?? null;
-    const simulation = result?.response?.simulation ?? null;
-    const clarifications = result?.clarifications || result?.response?.clarifications || null;
     
     if (!originalContent) {
       throw new Error('No content available to expand');
     }
     
-    const expanded = await expandOmnisText(originalContent, clarifications, blueprint, simulation);
+    const expanded = await expandOmnisText(originalContent); // ✅ Now passing the content!
     const tags = generateSuggestedTags(expanded, result);
 
     setExportState((prev) => ({ ...prev, suggestedTags: tags }));

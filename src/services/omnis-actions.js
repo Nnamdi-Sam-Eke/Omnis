@@ -235,14 +235,42 @@ Return ONLY valid JSON in the required format.
 }
 
 // ==============================
+// ANCHOR VARIABLE EXTRACTOR
+// Identifies the highest-stakes variables in the blueprint.
+// Injected into simulation so the engine cannot ignore them.
+// ==============================
+function extractAnchorVariables(blueprint) {
+  if (!blueprint?.variables?.length) return [];
+  const scored = blueprint.variables
+    .map((v) => {
+      let score = 0;
+      if (v.confidence === "High") score += 3;
+      if (v.confidence === "Medium") score += 1;
+      if (v.value !== null && v.value !== undefined) score += 2;
+      if (v.type === "financial") score += 2;
+      if (v.impact_direction === "positive") score += 1;
+      return { ...v, _score: score };
+    })
+    .sort((a, b) => b._score - a._score);
+  return scored.slice(0, 3).map((v) => {
+    const valueStr = v.value !== null ? `${v.value} ${v.unit || ""}`.trim() : "unknown value";
+    return `${v.name} (${valueStr}, confidence: ${v.confidence}) — if this changes, simulation shifts significantly`;
+  });
+}
+
+// ==============================
 // FIX 1 — SIMULATION ENGINE
 // simulateOmnisOutcomes(blueprint)
-// Takes the structured blueprint and projects probable futures
-// per option across time, with best/base/failure paths.
-// This is the missing heart of Omnis.
+// Anchor variables explicitly surfaced so the engine
+// cannot soft-pedal the most fragile high-stakes inputs.
 // ==============================
 export async function simulateOmnisOutcomes(blueprint) {
   if (!blueprint || typeof blueprint !== "object") return null;
+
+  const anchorVariables = extractAnchorVariables(blueprint);
+  const anchorBlock = anchorVariables.length
+    ? `\nCRITICAL ANCHOR VARIABLES (address each in the relevant option's failure path and fragility_triggers):\n${anchorVariables.map((a) => `- ${a}`).join("\n")}\n`
+    : "";
 
   const systemPrompt = `
 You are Omnis - a causal scenario simulation engine.
@@ -250,12 +278,22 @@ You are Omnis - a causal scenario simulation engine.
 Your job is NOT to give advice.
 Your job is to project what each option most likely causes across time,
 based purely on the variables, constraints, causal links, and assumptions
-provided in the Decision Blueprint.
+in the Decision Blueprint.
 
 Think like a systems modeler:
-- trace cause → effect chains
+- trace cause to effect chains
 - identify what compounds, what breaks, what becomes irreversible
 - model three probability paths: best, base (most likely), failure
+
+SIMULATION RULES:
+- Narratives must be causally specific. Reference actual variable names and values.
+  BAD: "stable income, reduced freelancing"
+  GOOD: "salary covers rent with surplus; big client likely lost within 90 days due to time constraints"
+- For every anchor variable flagged in the user prompt, explicitly project what
+  happens to it under each option's base and failure paths. Do not soft-pedal it.
+- If a variable has high confidence and high value, its loss must appear
+  as a named failure mode, not just a vague fragility trigger.
+- Narratives must be 20 to 40 words — causally meaningful, not vague.
 
 Return JSON only, in this exact shape:
 
@@ -269,38 +307,37 @@ Return JSON only, in this exact shape:
       "paths": {
         "best": {
           "probability": "~20%",
-          "narrative": "what happens if things go well",
+          "narrative": "specific causal outcome referencing actual variables/values",
           "key_driver": "what makes this path possible"
         },
         "base": {
           "probability": "~60%",
-          "narrative": "what most likely happens",
+          "narrative": "specific causal outcome referencing actual variables/values",
           "key_driver": "what makes this the default"
         },
         "failure": {
           "probability": "~20%",
-          "narrative": "what happens if key assumptions break",
+          "narrative": "specific causal outcome referencing actual variables/values",
           "key_driver": "what triggers this path"
         }
       },
       "timeline": {
-        "0_30_days": "what changes or must happen",
-        "30_90_days": "what becomes visible or locked in",
-        "3_12_months": "what the option has likely produced by now"
+        "0_30_days": "specific actions or changes — name the variable",
+        "30_90_days": "what becomes visible or locked in — name the variable",
+        "3_12_months": "what the option has concretely produced — use numbers where possible"
       },
       "reversibility": "Easy | Moderate | Hard",
-      "reversibility_reason": "why",
-      "compounding_effects": ["what builds positively over time"],
-      "fragility_triggers": ["what could break this option"],
-      "failure_modes": ["specific ways this option collapses"]
+      "reversibility_reason": "why — reference what is lost or locked in",
+      "compounding_effects": ["what builds positively over time — be specific"],
+      "fragility_triggers": ["what could break this option — name the variable"],
+      "failure_modes": ["specific named ways this option collapses"]
     }
   ]
 }
 
 Rules:
 - Only simulate options present in the blueprint. Do not invent options.
-- Use variables and causal_links from the blueprint to justify projections.
-- Keep narratives under 30 words each.
+- Use variables and causal_links from the blueprint to justify every projection.
 - Be honest about uncertainty — reflect it in simulation_confidence.
 - Do not recommend. Do not advise. Only project.
 `.trim();
@@ -308,7 +345,7 @@ Rules:
   const userPrompt = `
 Decision Blueprint:
 ${JSON.stringify(blueprint, null, 2)}
-
+${anchorBlock}
 Return ONLY valid JSON.
 `.trim();
 
