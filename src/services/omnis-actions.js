@@ -118,11 +118,25 @@ Return JSON only, in this exact shape:
   "objective": ["what success means (1-3 items)"],
   "constraints": ["limits (money/time/skills/energy/legal/etc)"],
   "options": [
-    { "id": "A", "name": "option name", "description": "short" },
-    { "id": "B", "name": "option name", "description": "short" }
+    { "id": "A", "name": "option name", "description": "short" }
   ],
   "variables": [
-    { "name": "income_per_task", "value": 5000, "unit": "NGN", "confidence": "High" }
+    {
+      "name": "income_per_task",
+      "value": 5000,
+      "unit": "NGN",
+      "confidence": "High",
+      "type": "financial",
+      "impact_direction": "positive"
+    }
+  ],
+  "causal_links": [
+    {
+      "from": "variable or option name",
+      "to": "outcome or other variable",
+      "relationship": "increases / decreases / enables / blocks",
+      "strength": "Strong / Moderate / Weak"
+    }
   ],
   "missing_info": [
     { "id": "m1", "question": "what must be known to simulate better?" }
@@ -132,10 +146,14 @@ Return JSON only, in this exact shape:
   ]
 }
 
+Variable type options: financial, time, energy, skill, risk, social, legal, unknown
+Variable impact_direction options: positive, negative, neutral, unknown
+
 Rules:
 - Use only options present in the scenario (don't invent options).
 - Extract numeric variables when present.
 - If unclear, set value null and add to missing_info.
+- Always populate causal_links with at least 1-2 relationships you can infer.
 - Keep it compact.
 `.trim();
 
@@ -217,12 +235,133 @@ Return ONLY valid JSON in the required format.
 }
 
 // ==============================
-// 2) STEP 1 - SNAPSHOT + SUGGESTED PATH
+// FIX 1 — SIMULATION ENGINE
+// simulateOmnisOutcomes(blueprint)
+// Takes the structured blueprint and projects probable futures
+// per option across time, with best/base/failure paths.
+// This is the missing heart of Omnis.
+// ==============================
+export async function simulateOmnisOutcomes(blueprint) {
+  if (!blueprint || typeof blueprint !== "object") return null;
+
+  const systemPrompt = `
+You are Omnis - a causal scenario simulation engine.
+
+Your job is NOT to give advice.
+Your job is to project what each option most likely causes across time,
+based purely on the variables, constraints, causal links, and assumptions
+provided in the Decision Blueprint.
+
+Think like a systems modeler:
+- trace cause → effect chains
+- identify what compounds, what breaks, what becomes irreversible
+- model three probability paths: best, base (most likely), failure
+
+Return JSON only, in this exact shape:
+
+{
+  "simulation_confidence": "Low | Medium | High",
+  "confidence_reason": "why confidence is this level",
+  "options": [
+    {
+      "id": "A",
+      "name": "option name",
+      "paths": {
+        "best": {
+          "probability": "~20%",
+          "narrative": "what happens if things go well",
+          "key_driver": "what makes this path possible"
+        },
+        "base": {
+          "probability": "~60%",
+          "narrative": "what most likely happens",
+          "key_driver": "what makes this the default"
+        },
+        "failure": {
+          "probability": "~20%",
+          "narrative": "what happens if key assumptions break",
+          "key_driver": "what triggers this path"
+        }
+      },
+      "timeline": {
+        "0_30_days": "what changes or must happen",
+        "30_90_days": "what becomes visible or locked in",
+        "3_12_months": "what the option has likely produced by now"
+      },
+      "reversibility": "Easy | Moderate | Hard",
+      "reversibility_reason": "why",
+      "compounding_effects": ["what builds positively over time"],
+      "fragility_triggers": ["what could break this option"],
+      "failure_modes": ["specific ways this option collapses"]
+    }
+  ]
+}
+
+Rules:
+- Only simulate options present in the blueprint. Do not invent options.
+- Use variables and causal_links from the blueprint to justify projections.
+- Keep narratives under 30 words each.
+- Be honest about uncertainty — reflect it in simulation_confidence.
+- Do not recommend. Do not advise. Only project.
+`.trim();
+
+  const userPrompt = `
+Decision Blueprint:
+${JSON.stringify(blueprint, null, 2)}
+
+Return ONLY valid JSON.
+`.trim();
+
+  const raw = await callGroqChat([
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userPrompt },
+  ]);
+
+  return tryExtractJson(raw);
+}
+
+// ==============================
+// FIX 2 — UPDATED generateOmnisContent()
+// Now returns a structured OBJECT, not a raw string.
+// Shape: { blueprint, simulation, summary }
+// The blueprint and simulation are passed downstream
+// so nothing is lost between pipeline stages.
 // ==============================
 export async function generateOmnisContent(scenarioText, clarifications = null) {
+  // --- Step 1: Build the structured decision model ---
+  const blueprint = await buildDecisionBlueprint(scenarioText, clarifications);
+
+  if (!blueprint || typeof blueprint !== "object") {
+    // Graceful fallback: surface the failure clearly
+    const fallbackSummary = await callGroqChat([
+      {
+        role: "system",
+        content: "You are Omnis. The blueprint stage failed. Ask the user 3 specific questions needed to proceed.",
+      },
+      {
+        role: "user",
+        content: `Blueprint failed for this scenario:\n\n${scenarioText}\n\nWhat 3 things are missing?`,
+      },
+    ]);
+    return {
+      blueprint: null,
+      simulation: null,
+      summary: fallbackSummary,
+      error: "blueprint_failed",
+    };
+  }
+
+  // --- Step 2: Run the simulation engine on the blueprint ---
+  const simulation = await simulateOmnisOutcomes(blueprint);
+
+  // --- Step 3: Generate the user-facing summary ---
+  // Summary is now grounded in BOTH blueprint AND simulation,
+  // not just a generic text prompt.
   const systemPrompt = `
-You are Omnis - a decision partner. Prioritize structure, systems thinking, and clear reasoning.
-You MUST suggest one best-fit path (based on priorities + constraints), while still presenting alternatives fairly.
+You are Omnis - a decision simulation engine presenting results to a user.
+
+You have already run a full simulation. Your job now is to present
+a crisp, structured summary that makes the simulated futures clear.
 
 Hard constraints:
 - Total output <= 220 words
@@ -230,38 +369,27 @@ Hard constraints:
 - Each bullet <= 14 words
 - No repetition
 - Zero fluff
+- Do NOT give personal advice. Present what the simulation shows.
 
 Tone:
 - Crisp
 - Structured
-- Practical
+- Grounded in simulation data
 `.trim();
 
-  const blueprint = await buildDecisionBlueprint(scenarioText, clarifications);
-
-  if (!blueprint || typeof blueprint !== "object") {
-    return await callGroqChat([
-      { role: "system", content: systemPrompt },
-      {
-        role: "user",
-        content: `Your blueprint failed. Ask 3 specific missing questions needed to simulate:\n\nScenario:\n${scenarioText}`,
-      },
-    ]);
-  }
-
-  const clarificationBlock = buildClarificationBlock(clarifications, "Clarifications (higher priority than assumptions)");
+  const clarificationBlock = buildClarificationBlock(
+    clarifications,
+    "Clarifications (override assumptions)"
+  );
 
   const userPrompt = `
-You are Omnis - a decision partner who thinks like a systems architect.
-
-Use the Decision Blueprint as your source of truth.
-Do not invent new options.
-If blueprint.missing_info is non-empty, ask for the top 3 missing items first.
-
-Decision Blueprint (JSON):
+Decision Blueprint:
 ${JSON.stringify(blueprint, null, 2)}
+
+Simulation Results:
+${simulation ? JSON.stringify(simulation, null, 2) : "Simulation unavailable — work from blueprint only."}
 ${clarificationBlock ? `\n${clarificationBlock}\n` : ""}
-Now produce the output using this structure:
+Produce a crisp summary using this structure:
 
 **System Map**
 - Decision
@@ -269,33 +397,45 @@ Now produce the output using this structure:
 - Constraints
 - Options
 
-**Key Trade-offs**
-- 1-2 bullets per option
+**Simulated Outcomes** (from simulation data)
+- 1-2 bullets per option showing most likely path
 
 **Suggested Path**
-- One option + 2 bullets why
+- One option + 2 bullets grounded in simulation
 - One "override rule"
 
 **Next 48 Hours**
-- 1 action
+- 1 concrete action
 `.trim();
 
-  const messages = [
+  const summary = await callGroqChat([
     { role: "system", content: systemPrompt },
     { role: "user", content: userPrompt },
-  ];
+  ]);
 
-  return await callGroqChat(messages);
+  // Return structured object — blueprint and simulation travel
+  // with the summary so downstream functions don't lose them
+  return {
+    blueprint,
+    simulation,
+    summary,
+    error: null,
+  };
 }
 
 // ==============================
-// 3) STEP 2 - LAYERED EXPANSION (COMPRESSED + DECISIVE)
+// FIX 3 — UPDATED expandOmnisText()
+// Now accepts blueprint + simulation as explicit params.
+// Expands from structured data, not from a compressed string.
+// Falls back gracefully if only previousOutput is available.
 // ==============================
-export async function expandOmnisText(previousOutput, clarifications = null) {
+export async function expandOmnisText(previousOutput, clarifications = null, blueprint = null, simulation = null) {
   const systemPrompt = `
 You are Omnis - a decision intelligence engine.
 
-Expand the brief overview into layered analysis that reduces decision fatigue.
+Expand into layered analysis that reduces decision fatigue.
+Your expansion must be grounded in the simulation data and blueprint
+provided — not in re-interpreting the summary text.
 
 Hard constraints:
 - TOTAL output <= 900 words
@@ -316,46 +456,61 @@ Tone:
 - Practical
 `.trim();
 
-  const clarificationNote = buildClarificationBlock(clarifications, "Clarifications provided by the user (override assumptions)");
+  const clarificationNote = buildClarificationBlock(
+    clarifications,
+    "Clarifications (override assumptions)"
+  );
+
+  // Build the grounding context — prefer structured data over text
+  const blueprintBlock = blueprint
+    ? `\nDecision Blueprint (source of truth):\n${JSON.stringify(blueprint, null, 2)}\n`
+    : "";
+
+  const simulationBlock = simulation
+    ? `\nSimulation Results (use these for timeline, reversibility, paths):\n${JSON.stringify(simulation, null, 2)}\n`
+    : "";
 
   const userPrompt = `
-Original brief overview:
+Original summary:
 ${previousOutput}
+${blueprintBlock}
+${simulationBlock}
 ${clarificationNote ? `\n${clarificationNote}\n` : ""}
-Structure output as:
+Structure the full expansion as:
 
-## Summary Layer (default)
+## Summary Layer
 ### Decision Snapshot
 - 2 bullets: core situation
 ### Options
-- 2-3 options
+- 2-3 options with one-line descriptions
 ### Trade-offs
 For each option:
 - Improves
 - Breaks
-- Risk
+- Risk level
 ### Suggested Path
 - Suggested option
-- Why (3 bullets)
+- Why (3 bullets grounded in simulation)
 - Confidence: Low/Medium/High
 - Override rule
 ### Next 7 Days
-- 3 actions
+- 3 concrete actions
 
 ## Context Layer
 ### Hidden Constraints
 - Max 5 bullets
 ### Assumptions & Fragility
-- Per option: 1 assumption, 1 fragility trigger
+- Per option: 1 assumption, 1 fragility trigger (from simulation if available)
 ### Key Uncertainties
 - 3 bullets max
 
-## Deep Layer (optional, compressed)
-### Cause -> Effect (per option)
-### Timeline Highlights (0-30, 30-90, 90-365)
-### Reversibility (Easy/Moderate/Hard)
+## Deep Layer
+### Cause → Effect (per option, from simulation causal chains)
+### Timeline (use simulation timeline: 0-30d / 30-90d / 3-12mo)
+### Reversibility (from simulation: Easy/Moderate/Hard + reason)
+### Failure Modes (from simulation failure paths)
 ### Red Flags (max 4)
-### 7-14 Day Plan (max 5)
+### 7-14 Day Plan (max 5 steps)
 `.trim();
 
   const messages = [

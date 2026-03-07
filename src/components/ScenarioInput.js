@@ -673,11 +673,18 @@ const runAnalysisForCurrentScenario = async () => {
       answer: (currentAnswers[q.id] || "").trim()
     }));
 
-    const generatedContent = await generateOmnisContent(scenarioText, clarificationsWithAnswers);
+    const omnisResult = await generateOmnisContent(scenarioText, clarificationsWithAnswers);
+
+    // generateOmnisContent now returns { blueprint, simulation, summary, error }
+    // We store all three so SimulationResult can pass blueprint + simulation
+    // to expandOmnisText, giving the deep layer real structured data.
+    const generatedContent = omnisResult?.summary ?? omnisResult;
+    const blueprint = omnisResult?.blueprint ?? null;
+    const simulation = omnisResult?.simulation ?? null;
 
     await handleScenarioSubmit(
       scenarioText,
-      { result: generatedContent, task: "AI Analysis", clarifications: clarificationsWithAnswers },
+      { result: generatedContent, blueprint, simulation, task: "AI Analysis", clarifications: clarificationsWithAnswers },
       scenario.category || "Uncategorized"
     );
 
@@ -686,6 +693,8 @@ const runAnalysisForCurrentScenario = async () => {
       category: scenario.category || "Uncategorized",
       response: {
         result: generatedContent,
+        blueprint,
+        simulation,
         task: "AI Analysis",
         clarifications: clarificationsWithAnswers
       },

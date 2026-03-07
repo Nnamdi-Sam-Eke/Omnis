@@ -512,10 +512,18 @@ const ScenarioSimulationCard = ({ results,
         editedScenarioText += `\n\nUpdated Variables:\n${editBlock}`;
       }
 
-      const newOutput = await generateOmnisContent(editedScenarioText, clarifications);
+      const omnisResult = await generateOmnisContent(editedScenarioText, clarifications);
+
+      // generateOmnisContent now returns { blueprint, simulation, summary, error }
+      const newOutput = omnisResult?.summary ?? omnisResult;
+      const blueprint = omnisResult?.blueprint ?? null;
+      const simulation = omnisResult?.simulation ?? null;
+
       const currency = detectCurrency(result?.query || '');
       replaceScenarioResult(timestamp, {
         ...result.response,
+        blueprint,
+        simulation,
         result: currency ? normalizeCurrency(newOutput, currency) : newOutput
       });
     } catch (err) {
@@ -1036,14 +1044,17 @@ const handleExplainFurther = async (result, timestamp) => {
   });
 
   try {
-    // ✅ Pass the original response as the previousOutput
+    // ✅ Pass blueprint + simulation so deep layer uses structured data, not just summary text
     const originalContent = result?.response?.result || '';
+    const blueprint = result?.response?.blueprint ?? null;
+    const simulation = result?.response?.simulation ?? null;
+    const clarifications = result?.clarifications || result?.response?.clarifications || null;
     
     if (!originalContent) {
       throw new Error('No content available to expand');
     }
     
-    const expanded = await expandOmnisText(originalContent); // ✅ Now passing the content!
+    const expanded = await expandOmnisText(originalContent, clarifications, blueprint, simulation);
     const tags = generateSuggestedTags(expanded, result);
 
     setExportState((prev) => ({ ...prev, suggestedTags: tags }));
