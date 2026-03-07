@@ -10,150 +10,9 @@ import {
 } from "firebase/firestore";
 import { useAuth } from "../AuthContext";
 import { debounce } from "lodash";
-import { Tag, Search, Clock, MessageSquare, Filter, AlertCircle, ChevronDown } from "lucide-react";
+import { Tag, Search, Clock, MessageSquare, Filter, AlertCircle } from "lucide-react";
 
 const PAGE_SIZE = 6;
-
-// ── Renders a single line of markdown-style text ─────────────────────────
-// Handles **bold**, *italic*, and plain text inline.
-const InlineText = ({ text }) => {
-  const parts = text.split(/(\*\*.*?\*\*|\*.*?\*)/g);
-  return (
-    <>
-      {parts.map((part, i) => {
-        if (part.startsWith('**') && part.endsWith('**'))
-          return <strong key={i} className="font-semibold text-slate-800 dark:text-slate-200">{part.slice(2, -2)}</strong>;
-        if (part.startsWith('*') && part.endsWith('*'))
-          return <em key={i}>{part.slice(1, -1)}</em>;
-        return <span key={i}>{part}</span>;
-      })}
-    </>
-  );
-};
-
-// ── Renders a structured object as labelled sections ─────────────────────
-const ObjectResponse = ({ obj }) => (
-  <div className="space-y-3">
-    {Object.entries(obj).map(([key, value]) => (
-      <div key={key}>
-        <p className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1">
-          {key.replace(/_/g, ' ')}
-        </p>
-        {typeof value === 'string'
-          ? <FormattedResponse response={value} />
-          : Array.isArray(value)
-            ? <ul className="space-y-1 pl-4 border-l-2 border-blue-200 dark:border-blue-700">
-                {value.map((item, i) => (
-                  <li key={i} className="text-sm text-slate-700 dark:text-slate-300">
-                    {typeof item === 'object' ? <ObjectResponse obj={item} /> : String(item)}
-                  </li>
-                ))}
-              </ul>
-            : typeof value === 'object' && value !== null
-              ? <ObjectResponse obj={value} />
-              : <p className="text-sm text-slate-700 dark:text-slate-300">{String(value)}</p>
-        }
-      </div>
-    ))}
-  </div>
-);
-
-// ── Main formatter — handles strings, objects, arrays ────────────────────
-const FormattedResponse = ({ response }) => {
-  // ── Object ──
-  if (typeof response === 'object' && response !== null && !Array.isArray(response)) {
-    return <ObjectResponse obj={response} />;
-  }
-
-  // ── Array ──
-  if (Array.isArray(response)) {
-    return (
-      <ul className="space-y-1 pl-4 border-l-2 border-blue-200 dark:border-blue-700">
-        {response.map((item, i) => (
-          <li key={i} className="text-sm text-slate-700 dark:text-slate-300">
-            {typeof item === 'object' ? <ObjectResponse obj={item} /> : String(item)}
-          </li>
-        ))}
-      </ul>
-    );
-  }
-
-  // ── String — parse markdown-style formatting ──
-  const text = typeof response === 'string' ? response : String(response);
-  const lines = text.split('\n');
-  const elements = [];
-  let i = 0;
-
-  while (i < lines.length) {
-    const line = lines[i].trim();
-
-    if (!line) { i++; continue; }
-
-    // Heading: ## or ###
-    if (line.startsWith('### ')) {
-      elements.push(
-        <h4 key={i} className="text-sm font-bold text-slate-800 dark:text-slate-100 mt-3 mb-1">
-          <InlineText text={line.slice(4)} />
-        </h4>
-      );
-    } else if (line.startsWith('## ')) {
-      elements.push(
-        <h3 key={i} className="text-base font-bold text-slate-800 dark:text-slate-100 mt-3 mb-1">
-          <InlineText text={line.slice(3)} />
-        </h3>
-      );
-    // Bullet: - or * or \n-
-    } else if (/^[-*•]\s+/.test(line)) {
-      // Collect consecutive bullet lines into a list
-      const items = [];
-      while (i < lines.length && /^[-*•]\s+/.test(lines[i].trim())) {
-        items.push(lines[i].trim().replace(/^[-*•]\s+/, ''));
-        i++;
-      }
-      elements.push(
-        <ul key={`ul-${i}`} className="space-y-1 pl-4 list-none">
-          {items.map((item, idx) => (
-            <li key={idx} className="flex gap-2 text-sm text-slate-700 dark:text-slate-300">
-              <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-blue-400 dark:bg-blue-500 flex-shrink-0" />
-              <InlineText text={item} />
-            </li>
-          ))}
-        </ul>
-      );
-      continue;
-    // Numbered list: 1. 2. etc
-    } else if (/^\d+\.\s+/.test(line)) {
-      const items = [];
-      while (i < lines.length && /^\d+\.\s+/.test(lines[i].trim())) {
-        items.push(lines[i].trim().replace(/^\d+\.\s+/, ''));
-        i++;
-      }
-      elements.push(
-        <ol key={`ol-${i}`} className="space-y-1 pl-4 list-decimal list-outside">
-          {items.map((item, idx) => (
-            <li key={idx} className="text-sm text-slate-700 dark:text-slate-300 pl-1">
-              <InlineText text={item} />
-            </li>
-          ))}
-        </ol>
-      );
-      continue;
-    // Regular paragraph
-    } else {
-      elements.push(
-        <p key={i} className="text-sm text-slate-700 dark:text-slate-300">
-          <InlineText text={line} />
-        </p>
-      );
-    }
-
-    i++;
-  }
-
-  return <div className="space-y-1.5">{elements}</div>;
-};
-
-// ─────────────────────────────────────────────────────────────────────────
 
 const History = () => {
   const { user } = useAuth();
@@ -168,12 +27,6 @@ const History = () => {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [visibleCount, setVisibleCount] = useState(6);
-  const [expandedItem, setExpandedItem] = useState(null); // Only one open at a time
-
-  const toggleExpand = (itemId) => {
-    setExpandedItem(prev => prev === itemId ? null : itemId);
-  };
-
   // Get category color based on category name
   const getCategoryColor = (category) => {
     const colors = {
@@ -468,95 +321,55 @@ const History = () => {
           {filteredInteractions.length > 0 ? (
             <div className="divide-y divide-slate-200 dark:divide-slate-700">
               {filteredInteractions.slice(0, visibleCount).map((interaction, index) => {
-                const isExpanded = expandedItem === interaction.id;
-                
                 return (
                 <div
                   key={interaction.id}
-                  className="p-6 hover:bg-slate-50/50 dark:hover:bg-slate-700/30 transition-all duration-200 cursor-pointer animate-in"
+                  className="relative px-6 py-5 hover:bg-slate-50/50 dark:hover:bg-slate-700/30 transition-all duration-200 animate-in"
                   style={{ animationDelay: `${index * 50}ms` }}
-                  onClick={() => toggleExpand(interaction.id)}
                 >
-                  {/* Header - Always Visible */}
-                  <div className="flex items-start justify-between gap-4 mb-3">
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg">
-                        <MessageSquare className="w-5 h-5 text-white" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-base font-semibold text-slate-800 dark:text-white truncate">
-                          {interaction.query || "Scenario Simulation"}
-                        </h3>
-                        <div className="flex items-center gap-2 mt-1">
-                          {/* Category Badge */}
-                          {interaction.category && interaction.category !== "Uncategorized" && (
-                            <div className={`flex items-center gap-1.5 px-2 py-0.5 bg-gradient-to-r ${getCategoryColor(interaction.category)} text-white rounded-full text-xs font-medium shadow-sm`}>
+                  <div className="flex items-start gap-4">
+                    {/* Icon */}
+                    <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg mt-0.5">
+                      <MessageSquare className="w-5 h-5 text-white" />
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-base font-semibold text-slate-800 dark:text-white truncate mb-2">
+                        {interaction.query || "Scenario Simulation"}
+                      </h3>
+
+                      <div className="flex items-center gap-3 text-sm text-slate-500 dark:text-slate-400 mb-3">
+                        <div className="flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          <span>
+                            {interaction.timestamp?.toDate?.().toLocaleString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            }) ?? "Recent"}
+                          </span>
+                        </div>
+                        {interaction.category && interaction.category !== "Uncategorized" && (
+                          <>
+                            <span>•</span>
+                            <div className={`flex items-center gap-1 px-2 py-0.5 bg-gradient-to-r ${getCategoryColor(interaction.category)} text-white rounded-full text-xs font-medium`}>
                               <Tag className="w-3 h-3" />
                               <span>{interaction.category}</span>
                             </div>
-                          )}
-                          {/* Timestamp */}
-                          <div className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
-                            <Clock className="w-3 h-3" />
-                            <span>
-                              {interaction.timestamp?.toDate?.().toLocaleString("en-US", {
-                                month: "short",
-                                day: "numeric",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              }) ?? "Recent"}
-                            </span>
-                          </div>
-                        </div>
+                          </>
+                        )}
                       </div>
-                    </div>
 
-                    {/* Expand/Collapse Icon */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleExpand(interaction.id);
-                      }}
-                      className="flex-shrink-0 p-2 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors"
-                    >
-                      <ChevronDown 
-                        className={`w-5 h-5 text-slate-500 dark:text-slate-400 transition-transform duration-200 ${
-                          isExpanded ? 'rotate-180' : ''
-                        }`}
-                      />
-                    </button>
+                      {/* Truncated preview */}
+                      {(interaction.response?.result || typeof interaction.response === 'string') && (
+                        <p className="text-sm text-slate-600 dark:text-slate-400 line-clamp-2 leading-relaxed">
+                          {(interaction.response?.result || interaction.response || '').toString().replace(/[#*_]/g, '').substring(0, 150)}...
+                        </p>
+                      )}
+                    </div>
                   </div>
-
-                  {/* Collapsible Content */}
-                  {isExpanded && (
-                    <div className="mt-4 max-h-72 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 animate-in">
-                      <div className="p-4 space-y-3">
-                        {/* Query Section */}
-                        {interaction.query && (
-                          <div>
-                            <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                              Query
-                            </p>
-                            <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3">
-                              {interaction.query}
-                            </p>
-                          </div>
-                        )}
-
-                        {/* Response Section */}
-                        {interaction.response && (
-                          <div>
-                            <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                              AI Analysis
-                            </p>
-                            <div className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 space-y-2">
-                              <FormattedResponse response={interaction.response} />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
                 </div>
               )})}
             </div>

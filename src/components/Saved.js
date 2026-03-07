@@ -3,6 +3,116 @@ import { collection, getDocs, query, orderBy, deleteDoc, doc, updateDoc, addDoc 
 import { db } from "../firebase";
 import { useAuth } from "../AuthContext";
 import { motion, AnimatePresence } from 'framer-motion';
+import { ChevronDown } from 'lucide-react';
+
+// ── Inline text renderer (bold, italic) ──────────────────────────────────
+const SavedInlineText = ({ text }) => {
+  const parts = text.split(/(\*\*.*?\*\*|\*.*?\*)/g);
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (part.startsWith('**') && part.endsWith('**'))
+          return <strong key={i} className="font-semibold text-slate-800 dark:text-slate-200">{part.slice(2, -2)}</strong>;
+        if (part.startsWith('*') && part.endsWith('*'))
+          return <em key={i}>{part.slice(1, -1)}</em>;
+        return <span key={i}>{part}</span>;
+      })}
+    </>
+  );
+};
+
+const SavedObjectResponse = ({ obj }) => (
+  <div className="space-y-3">
+    {Object.entries(obj).map(([key, value]) => (
+      <div key={key}>
+        <p className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1">
+          {key.replace(/_/g, ' ')}
+        </p>
+        {typeof value === 'string'
+          ? <SavedFormattedResponse response={value} />
+          : Array.isArray(value)
+            ? <ul className="space-y-1 pl-4 border-l-2 border-emerald-200 dark:border-emerald-700">
+                {value.map((item, i) => (
+                  <li key={i} className="text-sm text-slate-700 dark:text-slate-300">
+                    {typeof item === 'object' ? <SavedObjectResponse obj={item} /> : String(item)}
+                  </li>
+                ))}
+              </ul>
+            : typeof value === 'object' && value !== null
+              ? <SavedObjectResponse obj={value} />
+              : <p className="text-sm text-slate-700 dark:text-slate-300">{String(value)}</p>
+        }
+      </div>
+    ))}
+  </div>
+);
+
+const SavedFormattedResponse = ({ response }) => {
+  if (typeof response === 'object' && response !== null && !Array.isArray(response)) {
+    return <SavedObjectResponse obj={response} />;
+  }
+  if (Array.isArray(response)) {
+    return (
+      <ul className="space-y-1 pl-4 border-l-2 border-emerald-200 dark:border-emerald-700">
+        {response.map((item, i) => (
+          <li key={i} className="text-sm text-slate-700 dark:text-slate-300">
+            {typeof item === 'object' ? <SavedObjectResponse obj={item} /> : String(item)}
+          </li>
+        ))}
+      </ul>
+    );
+  }
+  const text = typeof response === 'string' ? response : String(response);
+  const lines = text.split('\n');
+  const elements = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i].trim();
+    if (!line) { i++; continue; }
+    if (line.startsWith('### ')) {
+      elements.push(<h4 key={i} className="text-sm font-bold text-slate-800 dark:text-slate-100 mt-3 mb-1"><SavedInlineText text={line.slice(4)} /></h4>);
+    } else if (line.startsWith('## ')) {
+      elements.push(<h3 key={i} className="text-base font-bold text-emerald-700 dark:text-emerald-400 mt-3 mb-1"><SavedInlineText text={line.slice(3)} /></h3>);
+    } else if (/^[-*•]\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^[-*•]\s+/.test(lines[i].trim())) {
+        items.push(lines[i].trim().replace(/^[-*•]\s+/, ''));
+        i++;
+      }
+      elements.push(
+        <ul key={`ul-${i}`} className="space-y-1 pl-4 list-none">
+          {items.map((item, idx) => (
+            <li key={idx} className="flex gap-2 text-sm text-slate-700 dark:text-slate-300">
+              <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-emerald-400 dark:bg-emerald-500 flex-shrink-0" />
+              <SavedInlineText text={item} />
+            </li>
+          ))}
+        </ul>
+      );
+      continue;
+    } else if (/^\d+\.\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\d+\.\s+/.test(lines[i].trim())) {
+        items.push(lines[i].trim().replace(/^\d+\.\s+/, ''));
+        i++;
+      }
+      elements.push(
+        <ol key={`ol-${i}`} className="space-y-1 pl-4 list-decimal list-outside">
+          {items.map((item, idx) => (
+            <li key={idx} className="text-sm text-slate-700 dark:text-slate-300 pl-1">
+              <SavedInlineText text={item} />
+            </li>
+          ))}
+        </ol>
+      );
+      continue;
+    } else {
+      elements.push(<p key={i} className="text-sm text-slate-700 dark:text-slate-300"><SavedInlineText text={line} /></p>);
+    }
+    i++;
+  }
+  return <div className="space-y-1.5">{elements}</div>;
+};
 
 const SavedComponent = ({ setCurrentSavedScenario, setSidebarOpen }) => {
   const { user } = useAuth();
@@ -18,6 +128,11 @@ const SavedComponent = ({ setCurrentSavedScenario, setSidebarOpen }) => {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [page, setPage] = useState(1);
   const [toastMessage, setToastMessage] = useState('');
+  const [expandedId, setExpandedId] = useState(null);
+
+  const toggleExpand = (id) => {
+    setExpandedId(prev => prev === id ? null : id);
+  };
   const pageSize = 6;
 
   // Fetch saved queries from Firestore
@@ -261,16 +376,6 @@ const SavedComponent = ({ setCurrentSavedScenario, setSidebarOpen }) => {
     return icons[category?.toLowerCase()] || "📄";
   };
 
-  // Handle scenario click - show toast instead of navigating
-  const handleScenarioClick = () => {
-    // OLD BEHAVIOR - COMMENTED OUT:
-    // setCurrentSavedScenario(item);
-    // setSidebarOpen(true);
-    
-    // NEW BEHAVIOR - SHOW TOAST:
-    setToastMessage("You'll be able to view your saved scenarios soon!");
-  };
-
   if (loading) {
     return (
       <div className="animate-pulse space-y-6 max-w-6xl mx-auto p-8">
@@ -416,12 +521,7 @@ const SavedComponent = ({ setCurrentSavedScenario, setSidebarOpen }) => {
                     <div
                       onClick={() => {
                         if (renamingId !== item.id && menuOpenId !== item.id) {
-                          // OLD BEHAVIOR - COMMENTED OUT:
-                          // setCurrentSavedScenario(item);
-                          // setSidebarOpen(true);
-                          
-                          // NEW BEHAVIOR - SHOW TOAST:
-                          handleScenarioClick();
+                          toggleExpand(item.id);
                         }
                       }}
                       className="px-6 py-5 cursor-pointer"
@@ -566,7 +666,60 @@ const SavedComponent = ({ setCurrentSavedScenario, setSidebarOpen }) => {
                             )}
                           </div>
                         )}
-                      </div>
+
+                        {/* Expand/Collapse Chevron */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleExpand(item.id);
+                          }}
+                          className="flex-shrink-0 p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors self-start mt-1"
+                        >
+                          <ChevronDown
+                            className={`w-5 h-5 text-slate-400 transition-transform duration-200 ${
+                              expandedId === item.id ? 'rotate-180' : ''
+                            }`}
+                          />
+                        </button>
+                      </div> {/* end flex items-start gap-4 */}
+
+                      {/* Expanded Formatted Content */}
+                      {expandedId === item.id && (
+                        <div className="mt-4 border-t border-slate-200 dark:border-slate-700 pt-4 space-y-4">
+                          {/* Query */}
+                          {item.query && (
+                            <div>
+                              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Query</p>
+                              <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3">
+                                {item.query}
+                              </p>
+                            </div>
+                          )}
+                          {/* Clarifications */}
+                          {item.clarifications?.length > 0 && (
+                            <div>
+                              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Clarifications</p>
+                              <div className="space-y-2">
+                                {item.clarifications.map((c, i) => (
+                                  <div key={i} className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-3">
+                                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">{c.question}</p>
+                                    <p className="text-sm text-slate-700 dark:text-slate-300">{c.answer}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {/* AI Analysis */}
+                          {(item.response?.result || item.response) && (
+                            <div>
+                              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">AI Analysis</p>
+                              <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2">
+                                <SavedFormattedResponse response={item.response?.result || item.response} />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
