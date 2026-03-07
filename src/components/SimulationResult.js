@@ -915,6 +915,84 @@ const ScenarioSimulationCard = ({ results,
   // Renders blueprint variables, causal links, simulation paths,
   // timeline, and clarifications — instead of a JSON wall.
   // ==============================
+  // ==============================
+  // MARKDOWN TO HTML CONVERTER
+  // Converts the expanded explanation text (which uses markdown
+  // syntax) into clean HTML for the PDF Detailed Explanation section.
+  // Handles: h1-h3 headings, bold, bullet lists, numbered lists,
+  // horizontal rules, and blank-line paragraph breaks.
+  // ==============================
+  function convertMarkdownToHTML(text) {
+    if (!text || typeof text !== 'string') return '';
+
+    const lines = text.split('\n');
+    let html = '';
+    let inList = false;
+
+    const closeList = () => {
+      if (inList) { html += '</ul>\n'; inList = false; }
+    };
+
+    lines.forEach(line => {
+      // Headings
+      if (/^### (.+)/.test(line)) {
+        closeList();
+        html += `<h4 class="exp-h3">${line.replace(/^### /, '')}</h4>\n`;
+        return;
+      }
+      if (/^## (.+)/.test(line)) {
+        closeList();
+        html += `<h3 class="exp-h2">${line.replace(/^## /, '')}</h3>\n`;
+        return;
+      }
+      if (/^# (.+)/.test(line)) {
+        closeList();
+        html += `<h2 class="exp-h1">${line.replace(/^# /, '')}</h2>\n`;
+        return;
+      }
+
+      // Horizontal rule
+      if (/^---+$/.test(line.trim())) {
+        closeList();
+        html += '<hr class="exp-hr">\n';
+        return;
+      }
+
+      // Bullet list item (*, -, •, +)
+      if (/^[*\-•+] (.+)/.test(line)) {
+        if (!inList) { html += '<ul class="exp-list">\n'; inList = true; }
+        const item = line.replace(/^[*\-•+] /, '').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>');
+        html += `  <li>${item}</li>\n`;
+        return;
+      }
+
+      // Numbered list item
+      if (/^\d+\. (.+)/.test(line)) {
+        closeList();
+        const item = line.replace(/^\d+\. /, '').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>');
+        html += `<p class="exp-numbered">${item}</p>\n`;
+        return;
+      }
+
+      // Empty line — close list, add spacing
+      if (line.trim() === '') {
+        closeList();
+        html += '<div class="exp-spacer"></div>\n';
+        return;
+      }
+
+      // Regular paragraph line — apply inline formatting
+      closeList();
+      const formatted = line
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>');
+      html += `<p class="exp-p">${formatted}</p>\n`;
+    });
+
+    closeList();
+    return html;
+  }
+
   function formatRawDataAsHTML(result) {
     if (!result) return '<p>No raw data available.</p>';
 
@@ -1310,6 +1388,17 @@ ${formatRawDataAsMarkdown(result)}
         .rd-path-fail td { background: #fff5f5 !important; }
         .rd-fragile-list li { color: #b71c1c; }
         .rd-fail-list li { color: #c62828; font-weight: bold; }
+        /* Detailed Explanation styles */
+        .exp-h1 { font-size: 1.3em; font-weight: bold; color: #1a1a2e; margin: 20px 0 8px; padding-bottom: 4px; border-bottom: 2px solid #007acc; }
+        .exp-h2 { font-size: 1.1em; font-weight: bold; color: #007acc; margin: 16px 0 6px; }
+        .exp-h3 { font-size: 0.95em; font-weight: bold; color: #444; margin: 12px 0 4px; text-transform: uppercase; letter-spacing: 0.03em; }
+        .exp-p { margin: 4px 0; font-size: 0.95em; color: #222; }
+        .exp-hr { border: none; border-top: 1px solid #ddd; margin: 16px 0; }
+        .exp-list { margin: 4px 0 8px 20px; padding: 0; }
+        .exp-list li { margin: 3px 0; font-size: 0.92em; color: #333; }
+        .exp-numbered { margin: 3px 0 3px 20px; font-size: 0.92em; color: #333; }
+        .exp-spacer { height: 6px; }
+        .exp-body { line-height: 1.7; }
         @media print {
             body { print-color-adjust: exact; }
             .no-print { display: none; }
@@ -1328,7 +1417,7 @@ ${formatRawDataAsMarkdown(result)}
     
     <div class="content">
         <h2>Detailed Explanation</h2>
-        <div>${content.replace(/\n/g, '<br>')}</div>
+        <div class="exp-body">${convertMarkdownToHTML(content)}</div>
     </div>
     
     <div class="raw-data">
