@@ -583,11 +583,7 @@ const SavedComponent = ({ setCurrentSavedScenario, setSidebarOpen }) => {
                             )}
                           </div>
 
-                          {item.response?.result && (
-                            <p className="text-sm text-slate-600 dark:text-slate-400 line-clamp-2 leading-relaxed">
-                              {item.response.result.substring(0, 150)}...
-                            </p>
-                          )}
+
                         </div>
 
                         {/* Actions Menu (visible on hover) */}
@@ -685,7 +681,7 @@ const SavedComponent = ({ setCurrentSavedScenario, setSidebarOpen }) => {
 
                       {/* Expanded Formatted Content */}
                       {expandedId === item.id && (
-                        <div className="mt-4 border-t border-slate-200 dark:border-slate-700 pt-4 space-y-4">
+                        <div className="mt-4 border-t border-slate-200 dark:border-slate-700 pt-4 space-y-4 max-h-80 overflow-y-auto">
                           {/* Query */}
                           {item.query && (
                             <div>

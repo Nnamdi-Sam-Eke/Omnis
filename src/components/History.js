@@ -362,12 +362,7 @@ const History = () => {
                         )}
                       </div>
 
-                      {/* Truncated preview */}
-                      {(interaction.response?.result || typeof interaction.response === 'string') && (
-                        <p className="text-sm text-slate-600 dark:text-slate-400 line-clamp-2 leading-relaxed">
-                          {(interaction.response?.result || interaction.response || '').toString().replace(/[#*_]/g, '').substring(0, 150)}...
-                        </p>
-                      )}
+
                     </div>
                   </div>
                 </div>
