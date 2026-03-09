@@ -1470,14 +1470,26 @@ const handleExplainFurther = async (result, timestamp) => {
   });
 
   try {
-    // ✅ Pass the original response as the previousOutput
     const originalContent = result?.response?.result || '';
     
     if (!originalContent) {
       throw new Error('No content available to expand');
     }
+
+    // Pull all structured data stored on the result — these are what make
+    // the expanded report grounded in real simulation data, not re-inferred text.
+    const blueprint = result?.response?.blueprint ?? null;
+    const latentPattern = result?.response?.latentPattern ?? null;
+    const simulation = result?.response?.simulation ?? null;
+    const clarifications = result?.response?.clarifications ?? null;
     
-    const expanded = await expandOmnisText(originalContent); // ✅ Now passing the content!
+    const expanded = await expandOmnisText(
+      originalContent,
+      clarifications,
+      blueprint,
+      latentPattern,
+      simulation
+    );
     const tags = generateSuggestedTags(expanded, result);
 
     setExportState((prev) => ({ ...prev, suggestedTags: tags }));

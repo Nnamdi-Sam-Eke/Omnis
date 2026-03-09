@@ -146,7 +146,7 @@ Return JSON only, in this exact shape:
   ]
 }
 
-Variable type options: financial, time, energy, skill, risk, social, legal, unknown
+Variable type options: financial, time, energy, skill, risk, social, legal, identity, unknown
 Variable impact_direction options: positive, negative, neutral, unknown
 
 Rules:
@@ -249,6 +249,12 @@ function extractAnchorVariables(blueprint) {
       if (v.value !== null && v.value !== undefined) score += 2;
       if (v.type === "financial") score += 2;
       if (v.impact_direction === "positive") score += 1;
+      // Human-dimension scoring — life decisions aren't just financial
+      if (v.type === "identity") score += 2;
+      if (v.type === "energy") score += 2;
+      if (v.type === "social") score += 1.5;
+      if (v.impact_direction === "negative") score += 1; // downside drives real decisions
+      if (/autonomy|stability|burnout|focus|reputation|trust/i.test(v.name || "")) score += 2;
       return { ...v, _score: score };
     })
     .sort((a, b) => b._score - a._score);
@@ -259,17 +265,90 @@ function extractAnchorVariables(blueprint) {
 }
 
 // ==============================
+// NEW — inferLatentPattern(blueprint)
+// Purpose:
+// The missing "intuition compression" layer.
+// Sits between blueprint and simulation.
+// Converts the decision map into the HIDDEN PATTERN beneath it —
+// the deeper force that makes the situation what it truly is.
+// Without this, Omnis only says "Option A does this."
+// With this, Omnis says "This scenario is really about THIS deeper force."
+// ==============================
+export async function inferLatentPattern(blueprint) {
+  if (!blueprint || typeof blueprint !== "object") return null;
+
+  const systemPrompt = `
+You are Omnis - a latent-pattern inference engine.
+
+Your job is NOT to simulate outcomes yet.
+Your job is to identify what this decision is REALLY about underneath.
+
+You must compress the blueprint into the hidden structure beneath it —
+the deeper recurring pattern, force, or tension that explains WHY this
+decision is hard and what the user is truly navigating.
+
+Return JSON only, in this exact shape:
+
+{
+  "core_tension": "short phrase naming the main trade-off",
+  "dominant_tradeoff": "the single most consequential exchange in this decision",
+  "hidden_pattern": "short phrase naming the deeper recurring system pattern",
+  "decision_gravity": "what pressure is distorting or pulling this decision",
+  "likely_regret_source": "what the user may regret later if they choose poorly",
+  "identity_pull": "what identity need or self-image is influencing the choice",
+  "irreversible_threshold": "what event, lock-in, or loss makes reversal much harder",
+  "optimization_bias": "what the user seems to be optimizing, intentionally or not",
+  "pattern_confidence": "Low | Medium | High",
+  "pattern_reason": "why this pattern inference is credible from the blueprint"
+}
+
+Rules:
+- Be grounded ONLY in the blueprint. Do not invent facts.
+- Name the real trade-off, not generic advice.
+- Prefer precise system patterns like:
+  "stability vs autonomy",
+  "short-term relief vs long-term leverage",
+  "single-point dependency risk",
+  "identity-protective hesitation",
+  "hidden fixed-cost fragility",
+  "uncertainty avoidance under pressure",
+  "control illusion masking exposure".
+- Be compact and honest.
+- Do NOT recommend an option.
+- Do NOT simulate outcomes — that comes next.
+`.trim();
+
+  const userPrompt = `
+Decision Blueprint:
+${JSON.stringify(blueprint, null, 2)}
+
+Return ONLY valid JSON.
+`.trim();
+
+  const raw = await callGroqChat([
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userPrompt },
+  ]);
+
+  return tryExtractJson(raw);
+}
+
+// ==============================
 // FIX 1 — SIMULATION ENGINE
 // simulateOmnisOutcomes(blueprint)
 // Anchor variables explicitly surfaced so the engine
 // cannot soft-pedal the most fragile high-stakes inputs.
 // ==============================
-export async function simulateOmnisOutcomes(blueprint) {
+export async function simulateOmnisOutcomes(blueprint, latentPattern = null) {
   if (!blueprint || typeof blueprint !== "object") return null;
 
   const anchorVariables = extractAnchorVariables(blueprint);
   const anchorBlock = anchorVariables.length
     ? `\nCRITICAL ANCHOR VARIABLES (address each in the relevant option's failure path and fragility_triggers):\n${anchorVariables.map((a) => `- ${a}`).join("\n")}\n`
+    : "";
+
+  const latentPatternBlock = latentPattern
+    ? `\nLatent Pattern Inference (use to sharpen causality and failure logic — do NOT turn into generic advice):\n${JSON.stringify(latentPattern, null, 2)}\n`
     : "";
 
   const systemPrompt = `
@@ -345,7 +424,11 @@ Rules:
   const userPrompt = `
 Decision Blueprint:
 ${JSON.stringify(blueprint, null, 2)}
+${latentPatternBlock}
 ${anchorBlock}
+Use the latent pattern only to sharpen causality and failure logic.
+Do NOT turn it into generic advice.
+Do NOT invent new options.
 Return ONLY valid JSON.
 `.trim();
 
@@ -359,17 +442,14 @@ Return ONLY valid JSON.
 
 // ==============================
 // FIX 2 — UPDATED generateOmnisContent()
-// Now returns a structured OBJECT, not a raw string.
-// Shape: { blueprint, simulation, summary }
-// The blueprint and simulation are passed downstream
-// so nothing is lost between pipeline stages.
+// Now returns: { blueprint, latentPattern, simulation, summary, error }
+// Pipeline: clarify → blueprint → inferLatentPattern → simulate → summarize
 // ==============================
 export async function generateOmnisContent(scenarioText, clarifications = null) {
   // --- Step 1: Build the structured decision model ---
   const blueprint = await buildDecisionBlueprint(scenarioText, clarifications);
 
   if (!blueprint || typeof blueprint !== "object") {
-    // Graceful fallback: surface the failure clearly
     const fallbackSummary = await callGroqChat([
       {
         role: "system",
@@ -382,36 +462,45 @@ export async function generateOmnisContent(scenarioText, clarifications = null) 
     ]);
     return {
       blueprint: null,
+      latentPattern: null,
       simulation: null,
       summary: fallbackSummary,
       error: "blueprint_failed",
     };
   }
 
-  // --- Step 2: Run the simulation engine on the blueprint ---
-  const simulation = await simulateOmnisOutcomes(blueprint);
+  // --- Step 2: Infer the hidden pattern beneath the decision ---
+  // This is the intuition compression layer — names the deeper force
+  // before simulation begins, so projection is shaped by pattern awareness.
+  const latentPattern = await inferLatentPattern(blueprint);
 
-  // --- Step 3: Generate the user-facing summary ---
-  // Summary is now grounded in BOTH blueprint AND simulation,
-  // not just a generic text prompt.
+  // --- Step 3: Run the simulation engine on blueprint + latent pattern ---
+  const simulation = await simulateOmnisOutcomes(blueprint, latentPattern);
+
+  // --- Step 4: Generate the user-facing summary ---
   const systemPrompt = `
-You are Omnis - a decision simulation engine presenting results to a user.
+You are Omnis - a decision intelligence engine presenting results to a user.
 
-You have already run a full simulation. Your job now is to present
-a crisp, structured summary that makes the simulated futures clear.
+You have already:
+- mapped the decision structure (blueprint),
+- inferred the hidden pattern beneath it (latent pattern),
+- simulated future paths across time (simulation).
+
+Your job now is to present a crisp, structured summary.
 
 Hard constraints:
-- Total output <= 220 words
+- Total output <= 260 words
 - Use bullets only
 - Each bullet <= 14 words
 - No repetition
 - Zero fluff
-- Do NOT give personal advice. Present what the simulation shows.
+- Do not use motivational language
+- Ground every section in blueprint, latent pattern, or simulation data
 
 Tone:
 - Crisp
 - Structured
-- Grounded in simulation data
+- Grounded
 `.trim();
 
   const clarificationBlock = buildClarificationBlock(
@@ -423,9 +512,13 @@ Tone:
 Decision Blueprint:
 ${JSON.stringify(blueprint, null, 2)}
 
+Latent Pattern:
+${latentPattern ? JSON.stringify(latentPattern, null, 2) : "Unavailable"}
+
 Simulation Results:
 ${simulation ? JSON.stringify(simulation, null, 2) : "Simulation unavailable — work from blueprint only."}
 ${clarificationBlock ? `\n${clarificationBlock}\n` : ""}
+
 Produce a crisp summary using this structure:
 
 **System Map**
@@ -434,12 +527,19 @@ Produce a crisp summary using this structure:
 - Constraints
 - Options
 
-**Simulated Outcomes** (from simulation data)
-- 1-2 bullets per option showing most likely path
+**Underlying Pattern**
+- Core tension
+- Hidden pattern
+- What the user is optimizing without realizing it
+- Irreversible threshold
 
-**Suggested Path**
-- One option + 2 bullets grounded in simulation
-- One "override rule"
+**Simulated Outcomes**
+- 1 bullet per option showing most likely path
+
+**Decision Posture**
+- Best-fit option inferred from simulation (not advice — posture)
+- 2 bullets why, grounded in simulation
+- 1 override rule
 
 **Next 48 Hours**
 - 1 concrete action
@@ -450,10 +550,9 @@ Produce a crisp summary using this structure:
     { role: "user", content: userPrompt },
   ]);
 
-  // Return structured object — blueprint and simulation travel
-  // with the summary so downstream functions don't lose them
   return {
     blueprint,
+    latentPattern,
     simulation,
     summary,
     error: null,
@@ -462,17 +561,23 @@ Produce a crisp summary using this structure:
 
 // ==============================
 // FIX 3 — UPDATED expandOmnisText()
-// Now accepts blueprint + simulation as explicit params.
-// Expands from structured data, not from a compressed string.
-// Falls back gracefully if only previousOutput is available.
+// Now accepts latentPattern as explicit param.
+// The hidden pattern shapes the Context Layer's meaning compression.
+// Pipeline: summary + blueprint + latentPattern + simulation → full report
 // ==============================
-export async function expandOmnisText(previousOutput, clarifications = null, blueprint = null, simulation = null) {
+export async function expandOmnisText(
+  previousOutput,
+  clarifications = null,
+  blueprint = null,
+  latentPattern = null,
+  simulation = null
+) {
   const systemPrompt = `
 You are Omnis - a decision intelligence engine.
 
 Expand into layered analysis that reduces decision fatigue.
-Your expansion must be grounded in the simulation data and blueprint
-provided — not in re-interpreting the summary text.
+Your expansion must be grounded in the simulation data, latent pattern,
+and blueprint provided — not in re-interpreting the summary text.
 
 Hard constraints:
 - TOTAL output <= 900 words
@@ -482,8 +587,9 @@ Hard constraints:
 - Deep Layer <= 320 words
 - No repetition
 
-Recommendation rule:
-- MUST suggest ONE path.
+Decision Posture rule:
+- MUST suggest ONE path inferred from simulation.
+- Frame it as Decision Posture, not personal advice.
 - Must remain conditional and non-absolute.
 - Use qualitative risk (Low/Medium/High).
 
@@ -498,9 +604,12 @@ Tone:
     "Clarifications (override assumptions)"
   );
 
-  // Build the grounding context — prefer structured data over text
   const blueprintBlock = blueprint
     ? `\nDecision Blueprint (source of truth):\n${JSON.stringify(blueprint, null, 2)}\n`
+    : "";
+
+  const latentPatternBlock = latentPattern
+    ? `\nLatent Pattern (hidden structure beneath this decision):\n${JSON.stringify(latentPattern, null, 2)}\n`
     : "";
 
   const simulationBlock = simulation
@@ -511,8 +620,10 @@ Tone:
 Original summary:
 ${previousOutput}
 ${blueprintBlock}
+${latentPatternBlock}
 ${simulationBlock}
 ${clarificationNote ? `\n${clarificationNote}\n` : ""}
+
 Structure the full expansion as:
 
 ## Summary Layer
@@ -525,8 +636,8 @@ For each option:
 - Improves
 - Breaks
 - Risk level
-### Suggested Path
-- Suggested option
+### Decision Posture
+- Best-fit option inferred from simulation
 - Why (3 bullets grounded in simulation)
 - Confidence: Low/Medium/High
 - Override rule
@@ -534,6 +645,12 @@ For each option:
 - 3 concrete actions
 
 ## Context Layer
+### Hidden Pattern
+- Core tension
+- Hidden pattern
+- Decision gravity
+- Likely regret source
+- Irreversible threshold
 ### Hidden Constraints
 - Max 5 bullets
 ### Assumptions & Fragility
@@ -542,12 +659,18 @@ For each option:
 - 3 bullets max
 
 ## Deep Layer
-### Cause → Effect (per option, from simulation causal chains)
-### Timeline (use simulation timeline: 0-30d / 30-90d / 3-12mo)
-### Reversibility (from simulation: Easy/Moderate/Hard + reason)
-### Failure Modes (from simulation failure paths)
-### Red Flags (max 4)
-### 7-14 Day Plan (max 5 steps)
+### Cause → Effect
+- Per option, from simulation causal chains
+### Timeline
+- 0-30d / 30-90d / 3-12mo
+### Reversibility
+- Easy/Moderate/Hard + reason
+### Failure Modes
+- From simulation failure paths
+### Red Flags
+- Max 4
+### 7-14 Day Plan
+- Max 5 steps
 `.trim();
 
   const messages = [
