@@ -31,7 +31,7 @@ import NotificationsPage from './pages/NotificationsPage';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import FeedbackButton from './components/FeedbackButton';
-import CreatorsCorner from './Creator\'sCorner';
+// import CreatorsCorner from './Creator\'sCorner';
 import Footer from './components/Footer';
 
 import ErrorBoundary from './components/ErrorBoundary';
@@ -341,7 +341,7 @@ const AppContent = () => {
               </NotificationsProvider>
 
               {!hideLayout && <Footer />}
-              {!hideLayout && <CreatorsCorner />}
+              {/* {!hideLayout && <CreatorsCorner />} */}
               {!hideLayout && <FeedbackButton />}
             </AccountProvider>
           </div>
