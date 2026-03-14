@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
  FiGrid, FiPlus, FiBookmark, FiBarChart,
-  FiList, FiHelpCircle,FiUserX, FiLogOut, FiCreditCard
+  FiList, FiHelpCircle,FiUserX, FiLogOut
 } from 'react-icons/fi';
 import { useAuth } from '../AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
@@ -24,22 +24,22 @@ function Sidebar({ isSidebarOpen, setIsSidebarOpen, onHoverChange }) {
 
   const delay = (ms) => new Promise((res) => setTimeout(res, ms));
 
-  const handleAddAccountClick = () => {
-    setToastMessage("Feature Coming Soon!");
-    setTimeout(() => setToastMessage(""), 4000);
-  };
+  // const handleAddAccountClick = () => {
+  //   setToastMessage("Feature Coming Soon!");
+  //   setTimeout(() => setToastMessage(""), 4000);
+  // };
 
-  const switchAccount = async (accountName) => {
-    const account = accounts.find(acc => acc.name === accountName);
-    if (!account) return;
-    try {
-      await logout();
-      await login(account.user.email, account.password);
-      setActiveAccount(account.name);
-    } catch (error) {
-      alert("Failed to switch account. Please try logging in again.");
-    }
-  };
+  // const switchAccount = async (accountName) => {
+  //   const account = accounts.find(acc => acc.name === accountName);
+  //   if (!account) return;
+  //   try {
+  //     await logout();
+  //     await login(account.user.email, account.password);
+  //     setActiveAccount(account.name);
+  //   } catch (error) {
+  //     alert("Failed to switch account. Please try logging in again.");
+  //   }
+  // };
 
   // Notify parent component when hover state changes
   const handleMouseEnter = () => {
