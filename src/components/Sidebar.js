@@ -2,12 +2,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
- FiGrid, FiMessageCircle, FiPlus, FiBookmark, FiBarChart,
-  FiList, FiDatabase, FiHelpCircle,FiUserX, FiLogOut, FiCreditCard
+ FiGrid, FiPlus, FiBookmark, FiBarChart,
+  FiList, FiHelpCircle,FiUserX, FiLogOut, FiCreditCard
 } from 'react-icons/fi';
 import { useAuth } from '../AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
-import { useAccounts } from '../AccountContext';
 import LogoutSplash from './logoutSplash';
 import { AnimatePresence, motion } from "framer-motion";
 
