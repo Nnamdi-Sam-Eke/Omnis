@@ -269,6 +269,12 @@ const BillingInfo = () => {
             </div>
           </div>
 
+          {/* Reassurance message */}
+          <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
+            After transfer, submit an upgrade request below. Plans are manually activated within{" "}
+            <span className="font-semibold text-slate-700 dark:text-slate-300">24 hours</span>.
+          </p>
+
           {/* Account details */}
           <div className="rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 p-4">
             <div className="mb-3">
