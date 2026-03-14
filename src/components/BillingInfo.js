@@ -16,25 +16,17 @@ import { db } from "../firebase";
 const PAYMENT_DESTINATIONS = {
   naira: {
     label: "₦ Naira Transfer (Nigeria)",
-    bankName: "YOUR_BANK_NAME",
-    accountName: "YOUR_ACCOUNT_NAME",
-    accountNumber: "YOUR_ACCOUNT_NUMBER",
+    bankName: "Access Bank",
+    accountName: "NNAMDI SAMUEL SAMEKEKALU",
+    accountNumber: "1237284546",
     notes: "Use your registered email as the transfer narration/reference.",
   },
-  usd1: {
-    label: "$ USD Domiciliary (Account 1)",
-    bankName: "YOUR_BANK_NAME",
-    accountName: "YOUR_ACCOUNT_NAME",
-    accountNumber: "YOUR_ACCOUNT_NUMBER",
-    swiftOrRouting: "OPTIONAL_SWIFT_OR_ROUTING",
-    notes: "Use your registered email as the transfer narration/reference.",
-  },
-  usd2: {
-    label: "$ USD Domiciliary (Account 2)",
-    bankName: "YOUR_BANK_NAME",
-    accountName: "YOUR_ACCOUNT_NAME",
-    accountNumber: "YOUR_ACCOUNT_NUMBER",
-    swiftOrRouting: "OPTIONAL_SWIFT_OR_ROUTING",
+  usd: {
+    label: "$ USD Domiciliary",
+    bankName: "Access Bank",
+    accountName: "NNAMDI SAMUEL SAMEKEKALU",
+    accountNumber: "1463185288",
+    swiftOrRouting: "ABNGNGLA",
     notes: "Use your registered email as the transfer narration/reference.",
   },
 };
@@ -271,7 +263,7 @@ const BillingInfo = () => {
                       : "bg-white border-slate-200 text-slate-600 hover:border-slate-400 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-300 dark:hover:border-slate-400"
                   }`}
                 >
-                  {key === "naira" ? "₦ Naira" : key === "usd1" ? "$ USD (1)" : "$ USD (2)"}
+                  {key === "naira" ? "₦ Naira" : "$ USD"}
                 </button>
               ))}
             </div>
