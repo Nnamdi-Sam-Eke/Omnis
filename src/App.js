@@ -243,7 +243,7 @@ const AppContent = () => {
   // --- CLEAN FULLSCREEN LAYOUT FOR NO-LAYOUT ROUTES ---
   if (hideLayout) {
     return (
-      <AccountProvider>
+      
         <NotificationsProvider>
         
       
@@ -255,7 +255,7 @@ const AppContent = () => {
 
         
         </NotificationsProvider>
-      </AccountProvider>
+      
     );
   }
 
@@ -273,7 +273,7 @@ const AppContent = () => {
           {/* ✅ FIXED: Container with responsive padding and max-width */}
           <div className="w-full px-0 sm:px-4 lg:px-0 transition-all duration-300 ease-in-out">
 
-            <AccountProvider>
+            
               {/* ✅ Correct placement */}
               <Toaster position="top-right" />
 
@@ -343,7 +343,7 @@ const AppContent = () => {
               {!hideLayout && <Footer />}
               {/* {!hideLayout && <CreatorsCorner />} */}
               {!hideLayout && <FeedbackButton />}
-            </AccountProvider>
+          
           </div>
         </main>
       </div>
