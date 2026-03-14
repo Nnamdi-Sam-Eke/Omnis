@@ -17,7 +17,7 @@ function Sidebar({ isSidebarOpen, setIsSidebarOpen, onHoverChange }) {
   const [logoutMessage, setLogoutMessage] = useState('');
   const [showSplash, setShowSplash] = useState(false);
   const sidebarRef = useRef(null);
-  const { accounts, activeAccount, setActiveAccount } = useAccounts();
+  // const { accounts, activeAccount, setActiveAccount } = useAccounts(); // removed: AccountContext deleted
   const [toastMessage, setToastMessage] = useState('');
   const [unreadCount, setUnreadCount] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
