@@ -36,7 +36,7 @@ import Footer from './components/Footer';
 
 import ErrorBoundary from './components/ErrorBoundary';
 
-import { AccountProvider } from './AccountContext';
+// import { AccountProvider } from './AccountContext';
 import { NotificationsProvider } from './context/NotificationsContext';
 import AuthForm from './components/AuthForm';
 import ProfilePage from './components/SimpleProfilePage';
